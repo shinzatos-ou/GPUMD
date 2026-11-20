@@ -5,7 +5,6 @@ The 1024-atom diamond cell (the 16-atom fixture repeated 4 x 4 x 4) is about 16.
 not a small box for the 7 A radial cutoff of nep_C.txt. Ghost slots are reserved as many as the
 real atoms, so that counting them as atoms would halve the reported temperature.
 """
-import re
 import shutil
 import subprocess
 
@@ -17,6 +16,8 @@ from conftest import MODELS_DIR, make_bulk_C
 
 N_REAL = 1024
 MAX_GHOST = 1024
+NUM_SWEEPS = 20
+NUM_ACTIVE_CELLS = 1
 
 
 def _write_model(path):
@@ -40,17 +41,8 @@ def _run(tmp_path, gpumd_command, run_in):
     return subprocess.run([gpumd_command], cwd=tmp_path, capture_output=True, text=True)
 
 
-def _read_gcmc_counts(path):
-    steps, counts, ins_accepted, del_accepted = [], [], [], []
-    pattern = re.compile(r'^# GCMC (\d+) \| C count (\d+) ins (\d+)/\d+ del (\d+)/\d+')
-    for line in path.read_text().splitlines():
-        match = pattern.match(line)
-        if match:
-            steps.append(int(match.group(1)))
-            counts.append(int(match.group(2)))
-            ins_accepted.append(int(match.group(3)))
-            del_accepted.append(int(match.group(4)))
-    return steps, counts, ins_accepted, del_accepted
+def _read_mcmd(path):
+    return np.loadtxt(path, ndmin=2)
 
 
 def _gcmc_run_in(mc_line):
@@ -126,16 +118,20 @@ def test_gcmc_low_chemical_potential_deletes_atoms(tmp_path, gpumd_command):
     result = _run(
         tmp_path,
         gpumd_command,
-        _gcmc_run_in(f'mc gcmc 10 300 300 20 0.5 1 {MAX_GHOST} 1 C -100 12.011 auto seed 3'),
+        _gcmc_run_in(
+            f'mc gcmc 10 300 300 {NUM_SWEEPS} 0.5 1 {MAX_GHOST} 1 C -100 12.011 auto seed 3'
+        ),
     )
     assert result.returncode == 0, result.stdout + result.stderr
 
-    steps, counts, ins_accepted, del_accepted = _read_gcmc_counts(tmp_path / 'mcmd.out')
-    assert steps == [10, 20, 30]
-    assert sum(ins_accepted) == 0
-    assert sum(del_accepted) > 0
-    assert counts[-1] == N_REAL - sum(del_accepted)
-    assert all(a >= b for a, b in zip([N_REAL] + counts, counts))
+    mcmd = _read_mcmd(tmp_path / 'mcmd.out')
+    assert mcmd.shape == (3, 6)
+    assert mcmd[:, 0].tolist() == [10, 20, 30]
+    assert np.all(mcmd[:, 2] == NUM_SWEEPS * NUM_ACTIVE_CELLS)
+    counts = mcmd[:, 3].astype(int).tolist()
+    assert np.all(mcmd[:, 4] == 0.0)
+    assert np.all(np.diff([N_REAL] + counts) <= 0)
+    assert counts[-1] < N_REAL
 
     frames = read(tmp_path / 'dump.xyz', index=':')
     assert [len(frame) for frame in frames] == counts
@@ -152,17 +148,20 @@ def test_gcmc_high_chemical_potential_inserts_atoms(tmp_path, gpumd_command):
         tmp_path,
         gpumd_command,
         _gcmc_run_in(
-            f'mc gcmc 10 300 300 20 0.5 1 {MAX_GHOST} 1 C 100 12.011 auto '
+            f'mc gcmc 10 300 300 {NUM_SWEEPS} 0.5 1 {MAX_GHOST} 1 C 100 12.011 auto '
             'parallel seed 5 overlap_cutoff 1 C 1.0'
         ),
     )
     assert result.returncode == 0, result.stdout + result.stderr
 
-    steps, counts, ins_accepted, del_accepted = _read_gcmc_counts(tmp_path / 'mcmd.out')
-    assert steps == [10, 20, 30]
-    assert sum(del_accepted) == 0
-    assert sum(ins_accepted) > 0
-    assert counts[-1] == N_REAL + sum(ins_accepted)
+    mcmd = _read_mcmd(tmp_path / 'mcmd.out')
+    assert mcmd.shape == (3, 7)
+    assert mcmd[:, 0].tolist() == [10, 20, 30]
+    assert np.all(mcmd[:, 2] == NUM_SWEEPS * NUM_ACTIVE_CELLS)
+    counts = mcmd[:, 3].astype(int).tolist()
+    assert np.all(mcmd[:, 5] == 0.0)
+    assert np.all(np.diff([N_REAL] + counts) >= 0)
+    assert counts[-1] > N_REAL
 
     frames = read(tmp_path / 'dump.xyz', index=':')
     assert [len(frame) for frame in frames] == counts

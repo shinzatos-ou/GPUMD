@@ -77,7 +77,6 @@ private:
   int max_ghost_atoms = 0;
   std::vector<float> overlap_cutoff2_by_type;
 
-  bool format_header_written = false;
   bool gcmc_capacity_warned = false;
   bool gcmc_grid_logged = false;
   bool gcmc_parallel = false;

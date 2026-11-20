@@ -25,6 +25,7 @@ Major contributors:
 #include "mc_ensemble_gcmc.cuh"
 #include "utilities/common.cuh"
 #include "utilities/gpu_macro.cuh"
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <random>
@@ -62,11 +63,21 @@ static void compute_gcmc_domain_grid(
   }
 }
 
+static std::string get_gcmc_column_description(const std::vector<std::string>& tokens)
+{
+  std::string description = "num_MD_steps  acceptance_ratio  num_trials  [N  "
+                            "insertion_acceptance_ratio  deletion_acceptance_ratio";
+  if (std::find(tokens.begin(), tokens.end(), "overlap_cutoff") != tokens.end()) {
+    description += "  num_overlap_rejections";
+  }
+  return description + " for each species]";
+}
+
 MC_Ensemble_GCMC::MC_Ensemble_GCMC(
   const std::vector<std::string>& tokens,
   int num_steps_mc_input,
   const std::string& potential_file_name)
-  : MC_Ensemble(tokens, potential_file_name)
+  : MC_Ensemble(tokens, potential_file_name, get_gcmc_column_description(tokens))
 {
   num_steps_mc = num_steps_mc_input;
   NN_ij.resize(1);
@@ -111,16 +122,6 @@ void MC_Ensemble_GCMC::compute(
   if (check_if_small_box(nep_energy.paramb.rc_radial_max, box)) {
     printf("Cannot use small box for MCMD.\n");
     exit(1);
-  }
-
-  if (!format_header_written) {
-    format_header_written = true;
-    mc_output << "# GCMC MD_step | <sp> count <N> ins <iacc>/<iatt> del <dacc>/<datt>";
-    if (!overlap_cutoff2_by_type.empty()) {
-      mc_output << " ovl";
-    }
-    mc_output << " | ...\n";
-    mc_output << std::flush;
   }
 
   gcmc_phase(md_step, temperature, atom, box);
@@ -446,13 +447,21 @@ void MC_Ensemble_GCMC::write_statistics(
       }
     }
   }
-  mc_output << "# GCMC " << md_step;
+  int num_trials = 0;
+  int num_accepted = 0;
   for (int s = 0; s < (int)gcmc_types.size(); ++s) {
-    mc_output << " | " << gcmc_species[s] << " count " << count[s] << " ins " << num_ins_accept[s]
-              << "/" << num_ins_attempt[s] << " del " << num_del_accept[s] << "/"
-              << num_del_attempt[s];
+    num_trials += num_ins_attempt[s] + num_del_attempt[s];
+    num_accepted += num_ins_accept[s] + num_del_accept[s];
+  }
+  auto ratio = [](int accepted, int attempted) {
+    return attempted > 0 ? accepted / double(attempted) : 0.0;
+  };
+  mc_output << md_step << "  " << ratio(num_accepted, num_trials) << " " << num_trials;
+  for (int s = 0; s < (int)gcmc_types.size(); ++s) {
+    mc_output << " " << count[s] << " " << ratio(num_ins_accept[s], num_ins_attempt[s]) << " "
+              << ratio(num_del_accept[s], num_del_attempt[s]);
     if (!overlap_cutoff2_by_type.empty()) {
-      mc_output << " ovl " << num_ins_overlap[s];
+      mc_output << " " << num_ins_overlap[s];
     }
   }
   mc_output << std::endl;
