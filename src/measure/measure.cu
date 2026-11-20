@@ -278,7 +278,7 @@ bool Measure::parse_action(
     actions_.emplace_back(std::move(action));
   } else if (tokens[0] == "mc") {
     std::unique_ptr<Action> action;
-    action.reset(new MC(tokens, group, atom, first_potential_filename));
+    action.reset(new MC(tokens, group, atom, box, force, first_potential_filename));
     actions_.emplace_back(std::move(action));
   } else if (tokens[0] == "compute_lsqt") {
     std::unique_ptr<Action> action;

@@ -81,9 +81,17 @@ static __global__ void find_neighbor_list_small_box(
     float y1 = g_y[n1];
     float z1 = g_z[n1];
     int t1 = g_type[n1];
+    if (t1 < 0) {
+      g_NN_radial[n1] = 0;
+      g_NN_angular[n1] = 0;
+      return;
+    }
     int count_radial = 0;
     int count_angular = 0;
     for (int n2 = N1; n2 < N2; ++n2) {
+      if (g_type[n2] < 0) {
+        continue;
+      }
       for (int ia = 0; ia < ebox.num_cells[0]; ++ia) {
         for (int ib = 0; ib < ebox.num_cells[1]; ++ib) {
           for (int ic = 0; ic < ebox.num_cells[2]; ++ic) {
@@ -156,6 +164,9 @@ static __global__ void find_descriptor_small_box(
   int n1 = blockIdx.x * blockDim.x + threadIdx.x + N1;
   if (n1 < N2) {
     int t1 = g_type[n1];
+    if (t1 < 0) {
+      return;
+    }
     float q[MAX_DIM] = {0.0f};
 
     // get radial descriptors
@@ -271,6 +282,9 @@ static __global__ void find_descriptor_small_box(
   int n1 = blockIdx.x * blockDim.x + threadIdx.x + N1;
   if (n1 < N2) {
     int t1 = g_type[n1];
+    if (t1 < 0) {
+      return;
+    }
     float q[MAX_DIM] = {0.0f};
 
     // get radial descriptors
@@ -382,6 +396,9 @@ static __global__ void find_force_radial_small_box(
   int n1 = blockIdx.x * blockDim.x + threadIdx.x + N1;
   if (n1 < N2) {
     int t1 = g_type[n1];
+    if (t1 < 0) {
+      return;
+    }
     for (int i1 = 0; i1 < g_NN[n1]; ++i1) {
       int index = i1 * N + n1;
       int n2 = g_NL[index];
@@ -486,6 +503,9 @@ static __global__ void find_force_angular_small_box(
     }
 
     int t1 = g_type[n1];
+    if (t1 < 0) {
+      return;
+    }
 
     for (int i1 = 0; i1 < g_NN_angular[n1]; ++i1) {
       int index = i1 * N + n1;
@@ -598,6 +618,9 @@ static __global__ void find_force_ZBL_small_box(
   if (n1 < N2) {
     float s_pe = 0.0f;
     int type1 = g_type[n1];
+    if (type1 < 0) {
+      return;
+    }
     int zi = zbl.atomic_numbers[type1];
     float pow_zi = pow(float(zi), 0.23f);
     for (int i1 = 0; i1 < g_NN[n1]; ++i1) {

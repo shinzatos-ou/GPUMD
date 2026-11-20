@@ -457,8 +457,20 @@ void Dump_XYZ::end_of_step(
     fid_ = my_fopen(filename.c_str(), "w");
   }
 
+  int number_of_active_atoms = 0;
+  for (int n = 0; n < number_of_atoms_to_dump; n++) {
+    int m = n;
+    if (grouping_method_ >= 0) {
+      m =
+        groups[grouping_method_].cpu_contents[groups[grouping_method_].cpu_size_sum[group_id_] + n];
+    }
+    if (atom.cpu_type[m] >= 0) {
+      ++number_of_active_atoms;
+    }
+  }
+
   // line 1
-  fprintf(fid_, "%d\n", number_of_atoms_to_dump);
+  fprintf(fid_, "%d\n", number_of_active_atoms);
 
   // line 2
   output_line2(global_time, box, groups, atom.cpu_atom_symbol, atom.virial_per_atom, thermo);
@@ -472,6 +484,9 @@ void Dump_XYZ::end_of_step(
     if (grouping_method_ >= 0) {
       int group_size_sum = groups[grouping_method_].cpu_size_sum[group_id_];
       m = groups[grouping_method_].cpu_contents[group_size_sum + n];
+    }
+    if (atom.cpu_type[m] < 0) {
+      continue;
     }
 
     fprintf(fid_, "%s", atom.cpu_atom_symbol[m].c_str());

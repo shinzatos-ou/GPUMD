@@ -20,6 +20,8 @@
 
 class Box;
 
+extern int g_gcmc_num_ghost_atoms;
+
 class Atom
 {
 public:

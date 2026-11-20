@@ -456,6 +456,7 @@ int Ensemble::get_number_of_atoms_for_temperature(
   if (move_group >= 0) {
     number_of_atoms_for_temperature -= group[move_grouping_method].cpu_size[move_group];
   }
+  number_of_atoms_for_temperature -= g_gcmc_num_ghost_atoms;
   return number_of_atoms_for_temperature;
 }
 

@@ -287,6 +287,11 @@ static __global__ void find_neighbor_list_large_box(
   double y1 = g_y[n1];
   double z1 = g_z[n1];
   int t1 = g_type[n1];
+  if (t1 < 0) {
+    g_NN_radial[n1] = 0;
+    g_NN_angular[n1] = 0;
+    return;
+  }
   int count_radial = 0;
   int count_angular = 0;
 
@@ -298,6 +303,9 @@ static __global__ void find_neighbor_list_large_box(
     apply_mic(box, x12, y12, z12);
     float d12_square = x12 * x12 + y12 * y12 + z12 * z12;
     int t2 = g_type[n2];
+    if (t2 < 0) {
+      continue;
+    }
     float rc_radial = (paramb.rc_radial[t1] + paramb.rc_radial[t2]) * 0.5f;
     float rc_angular = (paramb.rc_angular[t1] + paramb.rc_angular[t2]) * 0.5f;
     if (d12_square >= rc_radial * rc_radial) {
@@ -336,6 +344,9 @@ static __global__ void find_descriptor(
   int n1 = blockIdx.x * blockDim.x + threadIdx.x + N1;
   if (n1 < N2) {
     int t1 = g_type[n1];
+    if (t1 < 0) {
+      return;
+    }
     double x1 = g_x[n1];
     double y1 = g_y[n1];
     double z1 = g_z[n1];
@@ -457,6 +468,9 @@ static __global__ void find_force_radial(
   int n1 = blockIdx.x * blockDim.x + threadIdx.x + N1;
   if (n1 < N2) {
     int t1 = g_type[n1];
+    if (t1 < 0) {
+      return;
+    }
     float s_fx = 0.0f;
     float s_fy = 0.0f;
     float s_fz = 0.0f;
@@ -576,6 +590,9 @@ static __global__ void find_partial_force_angular(
     }
 
     int t1 = g_type[n1];
+    if (t1 < 0) {
+      return;
+    }
     double x1 = g_x[n1];
     double y1 = g_y[n1];
     double z1 = g_z[n1];
@@ -676,6 +693,9 @@ static __global__ void find_force_ZBL(
     double y1 = g_y[n1];
     double z1 = g_z[n1];
     int type1 = g_type[n1];
+    if (type1 < 0) {
+      return;
+    }
     int zi = zbl.atomic_numbers[type1];
     float pow_zi = pow(float(zi), 0.23f);
     for (int i1 = 0; i1 < g_NN[n1]; ++i1) {
@@ -1170,6 +1190,9 @@ static __global__ void find_descriptor(
   int n1 = blockIdx.x * blockDim.x + threadIdx.x + N1;
   if (n1 < N2) {
     int t1 = g_type[n1];
+    if (t1 < 0) {
+      return;
+    }
     double x1 = g_x[n1];
     double y1 = g_y[n1];
     double z1 = g_z[n1];

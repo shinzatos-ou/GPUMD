@@ -130,6 +130,20 @@ static void add_mc_species(
     if (tokens.size() < 7 || tokens[0] != "mc") {
       continue;
     }
+    if (tokens[1] == "gcmc") {
+      int num_species_gcmc = 0;
+      if (tokens.size() < 10 || !is_valid_int(tokens[9].c_str(), &num_species_gcmc)) {
+        continue;
+      }
+      for (int n = 0; n < num_species_gcmc; ++n) {
+        int index = 10 + n * 4;
+        if (index >= static_cast<int>(tokens.size())) {
+          break;
+        }
+        add_required_species(species_full, tokens[index], required);
+      }
+      continue;
+    }
     if (tokens[1] != "sgc" && tokens[1] != "vcsgc") {
       continue;
     }

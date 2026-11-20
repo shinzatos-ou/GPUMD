@@ -17,3 +17,10 @@ The data in this file are organized as follows:
 * column 1: number of :term:`MD` steps
 * column 2: acceptance ratio of the :term:`MC` trials
 * column 3 and more: species concentrations in the specified order
+
+For :attr:`mc gcmc`, one line is written after every call, in the form::
+
+  # GCMC <md_step> | <species> count <N> ins <accepted>/<attempted> del <accepted>/<attempted> | ...
+
+with one ``|``-separated block for each listed species, where ``count`` is the number of atoms of that species.
+If :attr:`overlap_cutoff` is used, each block ends with ``ovl <num>``, the number of insertions rejected by the overlap check.

@@ -19,15 +19,19 @@ The driver class for the various MC ensembles.
 Major contributors:
   Zheyong Fan: Initial implementation.
   Paul Erhart: Corrected species counts when restarting Monte Carlo.
+  Shinzato: Added the grand canonical ensemble.
 ------------------------------------------------------------------------------*/
 
+#include "force/force.cuh"
 #include "mc.cuh"
 #include "mc_ensemble_canonical.cuh"
+#include "mc_ensemble_gcmc.cuh"
 #include "mc_ensemble_sgc.cuh"
 #include "model/atom.cuh"
 #include "utilities/common.cuh"
 #include "utilities/gpu_macro.cuh"
 #include "utilities/read_file.cuh"
+#include <cmath>
 #include <cstring>
 
 MC::MC(void) { action_name = "mc"; }
@@ -36,10 +40,16 @@ MC::MC(
   const std::vector<std::string>& tokens,
   std::vector<Group>& group,
   Atom& atom,
+  Box& box,
+  Force& force,
   const std::string& potential_file_name)
 {
   action_name = "mc";
-  parse_mc(tokens, group, atom, potential_file_name);
+  if (tokens.size() > 1 && tokens[1] == "gcmc") {
+    parse_mc_gcmc(tokens, group, atom, box, force, potential_file_name);
+  } else {
+    parse_mc(tokens, group, atom, potential_file_name);
+  }
 }
 
 void MC::initialize(void)
@@ -356,5 +366,199 @@ void MC::parse_mc(
       potential_file_name));
   }
 
+  do_mcmd = true;
+}
+
+static int
+find_nep_type(const std::vector<std::string>& atom_symbols_in_nep, const std::string& symbol)
+{
+  for (int n = 0; n < (int)atom_symbols_in_nep.size(); ++n) {
+    if (symbol == atom_symbols_in_nep[n]) {
+      return n;
+    }
+  }
+  return -1;
+}
+
+void MC::parse_mc_gcmc(
+  const std::vector<std::string>& tokens,
+  std::vector<Group>& groups,
+  Atom& atom,
+  Box& box,
+  Force& force,
+  const std::string& potential_file_name)
+{
+  printf("Perform GCMC MCMD:\n");
+
+  const int num_param = tokens.size();
+  if (num_param < 14) {
+    PRINT_INPUT_ERROR(
+      "mc gcmc needs at least: N_md T_i T_f N_sweeps a_plus n_sep max_ghost N_species "
+      "(species mu mass e0)...\n");
+  }
+
+  int idx = 2;
+  if (!is_valid_int(tokens[idx++], &num_steps_md) || num_steps_md <= 0) {
+    PRINT_INPUT_ERROR("number of MD steps for GCMC should be a positive integer.\n");
+  }
+  if (!is_valid_real(tokens[idx++], &temperature_initial) || temperature_initial <= 0) {
+    PRINT_INPUT_ERROR("initial temperature for GCMC should be a positive number.\n");
+  }
+  if (!is_valid_real(tokens[idx++], &temperature_final) || temperature_final <= 0) {
+    PRINT_INPUT_ERROR("final temperature for GCMC should be a positive number.\n");
+  }
+  num_steps_mc = 0;
+  printf(
+    "    %d MD steps between GCMC calls, T from %g to %g K.\n",
+    num_steps_md,
+    temperature_initial,
+    temperature_final);
+
+  auto atom_symbols_in_nep = get_atom_symbols_in_nep(potential_file_name);
+
+  int num_gcmc_sweeps = 0;
+  int n_sep = 3;
+  int max_ghost = 0;
+  int num_species = 0;
+  double a_plus = 0.5;
+  if (!is_valid_int(tokens[idx++], &num_gcmc_sweeps) || num_gcmc_sweeps < 1) {
+    PRINT_INPUT_ERROR("gcmc number of sweeps should be a positive integer.\n");
+  }
+  if (!is_valid_real(tokens[idx++], &a_plus) || a_plus <= 0 || a_plus >= 1) {
+    PRINT_INPUT_ERROR("gcmc insertion probability a_plus should be in (0, 1).\n");
+  }
+  if (!is_valid_int(tokens[idx++], &n_sep) || n_sep < 1) {
+    PRINT_INPUT_ERROR("gcmc domain separation factor should be a positive integer.\n");
+  }
+  if (!is_valid_int(tokens[idx++], &max_ghost) || max_ghost < 1) {
+    PRINT_INPUT_ERROR("gcmc max_ghost should be a positive integer.\n");
+  }
+  if (!is_valid_int(tokens[idx++], &num_species) || num_species < 1) {
+    PRINT_INPUT_ERROR("gcmc number of species should be a positive integer.\n");
+  }
+  if (idx + 4 * num_species > num_param) {
+    PRINT_INPUT_ERROR("not enough (species mu mass e0) quadruples for gcmc.\n");
+  }
+
+  std::vector<std::string> gcmc_species(num_species);
+  std::vector<int> gcmc_types(num_species, -1);
+  std::vector<double> gcmc_mu(num_species), gcmc_mass(num_species), gcmc_e0(num_species, 0.0);
+  std::vector<int> gcmc_e0_auto(num_species, 0);
+  for (int s = 0; s < num_species; ++s) {
+    gcmc_species[s] = tokens[idx++];
+    if (!is_valid_real(tokens[idx++], &gcmc_mu[s])) {
+      PRINT_INPUT_ERROR("gcmc chemical potential should be a number.\n");
+    }
+    if (!is_valid_real(tokens[idx++], &gcmc_mass[s]) || gcmc_mass[s] <= 0) {
+      PRINT_INPUT_ERROR("gcmc mass should be a positive number.\n");
+    }
+    if (tokens[idx] == "auto") {
+      gcmc_e0_auto[s] = 1;
+      ++idx;
+    } else if (!is_valid_real(tokens[idx++], &gcmc_e0[s])) {
+      PRINT_INPUT_ERROR("gcmc isolated-atom energy e0 should be a number or 'auto'.\n");
+    }
+    gcmc_types[s] = find_nep_type(atom_symbols_in_nep, gcmc_species[s]);
+    if (gcmc_types[s] < 0) {
+      PRINT_INPUT_ERROR("a gcmc species is not allowed in the NEP model.\n");
+    }
+    const double lambda = 17.45842 / sqrt(gcmc_mass[s] * temperature_initial);
+    if (gcmc_e0_auto[s]) {
+      printf(
+        "        species %s: mu = %g eV, mass = %g, e0 = auto, Lambda = %g A at %g K.\n",
+        gcmc_species[s].c_str(),
+        gcmc_mu[s],
+        gcmc_mass[s],
+        lambda,
+        temperature_initial);
+    } else {
+      printf(
+        "        species %s: mu = %g eV, mass = %g, e0 = %g eV, Lambda = %g A at %g K.\n",
+        gcmc_species[s].c_str(),
+        gcmc_mu[s],
+        gcmc_mass[s],
+        gcmc_e0[s],
+        lambda,
+        temperature_initial);
+    }
+  }
+  printf(
+    "    %d sweeps per call, a_plus = %g, n_sep = %d, max_ghost = %d.\n",
+    num_gcmc_sweeps,
+    a_plus,
+    n_sep,
+    max_ghost);
+
+  bool gcmc_parallel = false;
+  bool has_seed = false;
+  int seed = 0;
+  std::vector<float> overlap_cutoff2_by_type;
+  while (idx < num_param) {
+    if (tokens[idx] == "parallel") {
+      gcmc_parallel = true;
+      ++idx;
+      printf("    use the GPU-parallel path.\n");
+    } else if (tokens[idx] == "seed") {
+      ++idx;
+      if (idx >= num_param || !is_valid_int(tokens[idx++], &seed) || seed < 0) {
+        PRINT_INPUT_ERROR("mc gcmc 'seed' needs a non-negative integer.\n");
+      }
+      has_seed = true;
+      printf("    random seed = %d.\n", seed);
+    } else if (tokens[idx] == "overlap_cutoff") {
+      ++idx;
+      int num_cutoffs = 0;
+      if (idx >= num_param || !is_valid_int(tokens[idx++], &num_cutoffs) || num_cutoffs < 1) {
+        PRINT_INPUT_ERROR("overlap_cutoff needs: N (species distance)...\n");
+      }
+      if (idx + 2 * num_cutoffs > num_param) {
+        PRINT_INPUT_ERROR("not enough (species distance) pairs for overlap_cutoff.\n");
+      }
+      overlap_cutoff2_by_type.assign(atom_symbols_in_nep.size(), 0.0f);
+      for (int k = 0; k < num_cutoffs; ++k) {
+        std::string symbol = tokens[idx++];
+        double d = 0.0;
+        if (!is_valid_real(tokens[idx++], &d) || d < 0.0) {
+          PRINT_INPUT_ERROR("overlap_cutoff distance should be a non-negative number.\n");
+        }
+        int t = find_nep_type(atom_symbols_in_nep, symbol);
+        if (t < 0) {
+          PRINT_INPUT_ERROR("an overlap_cutoff species is not allowed in the NEP model.\n");
+        }
+        overlap_cutoff2_by_type[t] = (float)(d * d);
+        printf("    overlap_cutoff: species %s -> %g A.\n", symbol.c_str(), d);
+      }
+    } else {
+      PRINT_INPUT_ERROR(
+        "unknown option for mc gcmc (expected parallel, seed or overlap_cutoff).\n");
+    }
+  }
+
+  if (!MC_Ensemble_GCMC::capacity_reserved() && force.get_number_of_potentials() > 0) {
+    PRINT_INPUT_ERROR("mc gcmc must appear before potential in the first run.\n");
+  }
+
+  MC_Ensemble_GCMC* gcmc = new MC_Ensemble_GCMC(tokens, num_steps_mc, potential_file_name);
+  if (has_seed) {
+    gcmc->set_seed((unsigned)seed);
+  }
+  if (!overlap_cutoff2_by_type.empty()) {
+    gcmc->set_overlap_cutoffs(overlap_cutoff2_by_type);
+  }
+  gcmc->set_gcmc_parameters(
+    gcmc_species,
+    gcmc_types,
+    gcmc_mu,
+    gcmc_mass,
+    gcmc_e0,
+    gcmc_e0_auto,
+    num_gcmc_sweeps,
+    a_plus,
+    n_sep,
+    max_ghost,
+    gcmc_parallel);
+  gcmc->ensure_gcmc_capacity(atom, box, groups);
+
+  mc_ensemble.reset(gcmc);
   do_mcmd = true;
 }

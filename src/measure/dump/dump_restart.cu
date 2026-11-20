@@ -100,7 +100,13 @@ void Dump_Restart::end_of_step(
     }
   }
 
-  fprintf(fid, "%d\n", number_of_atoms);
+  int number_of_active_atoms = 0;
+  for (int n = 0; n < number_of_atoms; n++) {
+    if (atom.cpu_type[n] >= 0) {
+      ++number_of_active_atoms;
+    }
+  }
+  fprintf(fid, "%d\n", number_of_active_atoms);
 
   fprintf(
     fid, "pbc=\"%c %c %c\" ", box.pbc_x ? 'T' : 'F', box.pbc_y ? 'T' : 'F', box.pbc_z ? 'T' : 'F');
@@ -131,6 +137,9 @@ void Dump_Restart::end_of_step(
   fprintf(fid, "\n");
 
   for (int n = 0; n < number_of_atoms; n++) {
+    if (atom.cpu_type[n] < 0) {
+      continue;
+    }
     const double natural_to_A_per_fs = 1.0 / TIME_UNIT_CONVERSION;
     fprintf(
       fid,

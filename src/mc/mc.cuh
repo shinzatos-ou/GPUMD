@@ -33,6 +33,8 @@ public:
     const std::vector<std::string>& tokens,
     std::vector<Group>& group,
     Atom& atom,
+    Box& box,
+    Force& force,
     const std::string& potential_file_name);
 
   std::unique_ptr<MC_Ensemble> mc_ensemble;
@@ -86,4 +88,11 @@ private:
   void check_species_canonical(std::vector<Group>& groups, Atom& atom);
   void
   check_species_sgc(std::vector<Group>& groups, Atom& atom, const std::string& potential_file_name);
+  void parse_mc_gcmc(
+    const std::vector<std::string>& tokens,
+    std::vector<Group>& groups,
+    Atom& atom,
+    Box& box,
+    Force& force,
+    const std::string& potential_file_name);
 };

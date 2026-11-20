@@ -510,6 +510,40 @@ void Velocity::initialize_cpu(
 
   do_velocity_correction = false;
   if (!has_velocity_in_xyz) {
+    if (g_gcmc_num_ghost_atoms > 0) {
+      std::vector<int> active;
+      for (int n = 0; n < N; ++n) {
+        if (atom.cpu_type[n] >= 0) {
+          active.push_back(n);
+        }
+      }
+      const int Na = active.size();
+      std::vector<double> mass(Na);
+      std::vector<double> position(Na * 3);
+      std::vector<double> velocity(Na * 3);
+      for (int m = 0; m < Na; ++m) {
+        mass[m] = atom.cpu_mass[active[m]];
+        for (int d = 0; d < 3; ++d) {
+          position[m + d * Na] = atom.cpu_position_per_atom[active[m] + d * N];
+        }
+      }
+      if (use_seed) {
+        get_random_velocities_by_seed(
+          Na, velocity.data(), velocity.data() + Na, velocity.data() + Na * 2, seed);
+      } else {
+        get_random_velocities(Na, velocity.data(), velocity.data() + Na, velocity.data() + Na * 2);
+      }
+      correct_velocity(Na, mass, position, velocity);
+      scale(
+        initial_temperature, mass, velocity.data(), velocity.data() + Na, velocity.data() + Na * 2);
+      std::fill(atom.cpu_velocity_per_atom.begin(), atom.cpu_velocity_per_atom.end(), 0.0);
+      for (int m = 0; m < Na; ++m) {
+        for (int d = 0; d < 3; ++d) {
+          atom.cpu_velocity_per_atom[active[m] + d * N] = velocity[m + d * Na];
+        }
+      }
+      return;
+    }
     if (use_seed) {
       get_random_velocities_by_seed(
         N,

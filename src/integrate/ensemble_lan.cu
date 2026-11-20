@@ -31,6 +31,17 @@ Major contributors:
 #include <cstdlib>
 #include <cstring>
 
+static __global__ void
+gpu_zero_ghost_velocity(const int N, const int* g_type, double* g_vx, double* g_vy, double* g_vz)
+{
+  int n = blockIdx.x * blockDim.x + threadIdx.x;
+  if (n < N && g_type[n] < 0) {
+    g_vx[n] = 0.0;
+    g_vy[n] = 0.0;
+    g_vz[n] = 0.0;
+  }
+}
+
 Ensemble_LAN::Ensemble_LAN() {}
 
 Ensemble_LAN::Ensemble_LAN(const std::vector<std::string>& tokens, const std::vector<Group>& group)
@@ -263,7 +274,9 @@ void Ensemble_LAN::initialize_run(const double, Atom& atom, Box&, const std::vec
 
 // wrapper of the global Langevin thermostatting kernels
 void Ensemble_LAN::integrate_nvt_lan_half(
-  const GPU_Vector<double>& mass, GPU_Vector<double>& velocity_per_atom)
+  const GPU_Vector<int>& atom_type,
+  const GPU_Vector<double>& mass,
+  GPU_Vector<double>& velocity_per_atom)
 {
   const int number_of_atoms = mass.size();
 
@@ -280,6 +293,16 @@ void Ensemble_LAN::integrate_nvt_lan_half(
     velocity_per_atom.data() + 2 * number_of_atoms);
   GPU_CHECK_KERNEL
 
+  if (g_gcmc_num_ghost_atoms > 0) {
+    gpu_zero_ghost_velocity<<<(number_of_atoms - 1) / 128 + 1, 128>>>(
+      number_of_atoms,
+      atom_type.data(),
+      velocity_per_atom.data(),
+      velocity_per_atom.data() + number_of_atoms,
+      velocity_per_atom.data() + 2 * number_of_atoms);
+    GPU_CHECK_KERNEL
+  }
+
   gpu_find_momentum<<<4, 1024>>>(
     number_of_atoms,
     mass.data(),
@@ -294,6 +317,16 @@ void Ensemble_LAN::integrate_nvt_lan_half(
     velocity_per_atom.data() + number_of_atoms,
     velocity_per_atom.data() + 2 * number_of_atoms);
   GPU_CHECK_KERNEL
+
+  if (g_gcmc_num_ghost_atoms > 0) {
+    gpu_zero_ghost_velocity<<<(number_of_atoms - 1) / 128 + 1, 128>>>(
+      number_of_atoms,
+      atom_type.data(),
+      velocity_per_atom.data(),
+      velocity_per_atom.data() + number_of_atoms,
+      velocity_per_atom.data() + 2 * number_of_atoms);
+    GPU_CHECK_KERNEL
+  }
 }
 
 // wrapper of the local Langevin thermostatting kernels
@@ -473,7 +506,7 @@ void Ensemble_LAN::compute1(
   GPU_Vector<double>& thermo)
 {
   if (type == EnsembleType::NVT_LAN) {
-    integrate_nvt_lan_half(atom.mass, atom.velocity_per_atom);
+    integrate_nvt_lan_half(atom.type, atom.mass, atom.velocity_per_atom);
 
     velocity_verlet(
       true,
@@ -522,7 +555,7 @@ void Ensemble_LAN::compute2(
       atom.position_per_atom,
       atom.velocity_per_atom);
 
-    integrate_nvt_lan_half(atom.mass, atom.velocity_per_atom);
+    integrate_nvt_lan_half(atom.type, atom.mass, atom.velocity_per_atom);
 
     find_thermo(
       box.get_volume(),

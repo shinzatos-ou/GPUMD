@@ -64,8 +64,10 @@ protected:
   GPU_Vector<gpurandState> curand_states_source;
   GPU_Vector<gpurandState> curand_states_sink;
 
-  void
-  integrate_nvt_lan_half(const GPU_Vector<double>& mass, GPU_Vector<double>& velocity_per_atom);
+  void integrate_nvt_lan_half(
+    const GPU_Vector<int>& atom_type,
+    const GPU_Vector<double>& mass,
+    GPU_Vector<double>& velocity_per_atom);
 
   void integrate_heat_lan_half(
     const std::vector<Group>& group,
