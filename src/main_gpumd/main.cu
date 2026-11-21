@@ -20,6 +20,7 @@ Major contributors:
 
 #include "deposition.cuh"
 #include "integrate/replica/replica.cuh"
+#include "mc/gcmc_driver.cuh"
 #include "run.cuh"
 #include "utilities/error.cuh"
 #include "utilities/gpu_macro.cuh"
@@ -48,8 +49,18 @@ int main(int argc, char* argv[])
 
   RunInput run_input("run.in");
   Deposition deposition;
+  GCMC_Driver gcmc_driver;
   if (has_multi_replica(run_input)) {
     run_replica(run_input);
+  } else if (gcmc_driver.has_gcmc(run_input)) {
+    gcmc_driver.initialize(run_input);
+    for (int i = 0; i < gcmc_driver.num_subruns; ++i) {
+      RunInput subrun_input = gcmc_driver.prepare_subrun(i);
+      {
+        Run run(subrun_input);
+      }
+      gcmc_driver.mc_step(i);
+    }
   } else if (!deposition.has_deposition(run_input)) {
     Run run(run_input);
   } else {

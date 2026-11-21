@@ -46,7 +46,9 @@ static void check_is_nep(const std::string& potential_file_name)
 }
 
 MC_Ensemble::MC_Ensemble(
-  const std::vector<std::string>& tokens, const std::string& potential_file_name)
+  const std::vector<std::string>& tokens,
+  const std::string& potential_file_name,
+  const std::string& column_description)
 {
   const int num_param = tokens.size();
   mc_output.open("mcmd.out", std::ios::app);
@@ -55,7 +57,7 @@ MC_Ensemble::MC_Ensemble(
     mc_output << tokens[n] << " ";
   }
   mc_output << "\n";
-  mc_output << "# num_MD_steps  acceptance_ratio [species_concentrations]" << std::endl;
+  mc_output << "# " << column_description << std::endl;
 
   const int n_max = 1000;
   const int m_max = 1000;

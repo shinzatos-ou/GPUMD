@@ -28,7 +28,11 @@
 class MC_Ensemble
 {
 public:
-  MC_Ensemble(const std::vector<std::string>& tokens, const std::string& potential_file_name);
+  MC_Ensemble(
+    const std::vector<std::string>& tokens,
+    const std::string& potential_file_name,
+    const std::string& column_description =
+      "num_MD_steps  acceptance_ratio [species_concentrations]");
   virtual ~MC_Ensemble(void);
 
   virtual void compute(

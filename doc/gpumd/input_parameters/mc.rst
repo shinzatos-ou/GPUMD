@@ -6,7 +6,7 @@
 ==========
 
 The :attr:`mc` keyword is used to carry out Monte Carlo (:term:`MC`) trial steps, usually in combination with a :term:`MD` simulation.
-Three :term:`MC` ensembles are supported, including the canonical, the semi-grand canonical (:term:`SGC`), and the variance-constrained semi-grand canonical (:term:`VCSGC`) [Sadigh2012a]_ [Sadigh2012b]_ ensemble.
+Four :term:`MC` ensembles are supported, including the canonical, the semi-grand canonical (:term:`SGC`), the variance-constrained semi-grand canonical (:term:`VCSGC`) [Sadigh2012a]_ [Sadigh2012b]_, and the grand canonical ensemble.
 
 This keyword requires an ordinary energy NEP (``model nep``) in the
 :ref:`nep.txt format <nep_txt>`.
@@ -19,19 +19,21 @@ Syntax
     mc canonical <md_steps> <mc_trials> <T_i> <T_f> [group <grouping_method> <group_id>]
     mc sgc <md_steps> <mc_trials> <T_i> <T_f> <num_species> {<species_0> <mu_0> <species_1> <mu_1> ...} [group <grouping_method>  <group_id>]
     mc vcsgc <md_steps> <mc_trials> <T_i> <T_f> <num_species> {<species_0> <phi_0> <species_1> <phi_1> ...} <kappa> [group <grouping_method>  <group_id>]
+    mc gcmc <md_steps> <T_i> <T_f> <num_sweeps> <a_plus> <n_sep> <num_species> {<species_0> <mu_0> <mass_0> <e0_0> ...} [parallel] [seed <seed>] [overlap_cutoff <num> {<species> <d>} ...]
 
 Parameters
 ----------
 
-For all three forms, ``mc_trials`` trials are performed every ``md_steps`` MD steps.
+For the :attr:`canonical`, :attr:`sgc`, and :attr:`vcsgc` forms, ``mc_trials`` trials are performed every ``md_steps`` MD steps.
+The parameters of the :attr:`gcmc` form are described in its own section below.
 The MC target temperature changes linearly from ``T_i`` to ``T_f`` during the run.
 
 * The listed species must be supported by the :term:`NEP` model.
 
-* For all the :term:`MC` ensembles, there is an option to specify the grouping method :attr:`grouping_method` and the group ID :attr:`group_id` in the given grouping method, after the parameter :attr:`group`.
+* For the :attr:`canonical`, :attr:`sgc`, and :attr:`vcsgc` ensembles, there is an option to specify the grouping method :attr:`grouping_method` and the group ID :attr:`group_id` in the given grouping method, after the parameter :attr:`group`.
   The functionality is illustrated in the example section below.
 
-* There must be at least one listed species in the initial model system or specified group. For example, if you list Au and Cu for doing :term:`SGC` :term:`MC`, the system or the specified group must have some Au or Cu atoms (or both); otherwise the :term:`MC` trial cannot get started.
+* For the :attr:`canonical`, :attr:`sgc`, and :attr:`vcsgc` ensembles, there must be at least one listed species in the initial model system or specified group. For example, if you list Au and Cu for doing :term:`SGC` :term:`MC`, the system or the specified group must have some Au or Cu atoms (or both); otherwise the :term:`MC` trial cannot get started.
 
 :attr:`canonical`
 ^^^^^^^^^^^^^^^^^
@@ -76,6 +78,33 @@ Typically a :math:`\kappa` value of 100 is suitable.
 If the concentration fluctuations are too large (e.g., deep with miscibility gaps) one should increase this value.
 
 The parameter normalization differs from that used in the original papers [Sadigh2012a]_ [Sadigh2012b]_; see also [Rahm2021]_.
+
+:attr:`gcmc`
+^^^^^^^^^^^^
+Grand canonical sampling inserts and deletes atoms of the listed species.
+
+Every :attr:`md_steps` :term:`MD` steps, :attr:`num_sweeps` sweeps of insertion and deletion trials are performed, while the temperature changes linearly from :attr:`T_i` to :attr:`T_f`.
+The box is divided into cells of width about the radial cutoff of the :term:`NEP` model.
+In each sweep, a random set of cells at least :attr:`n_sep` cutoffs apart is chosen, and each of them makes one trial: a species is chosen at random, and an insertion at a random point of the cell is tried with probability :attr:`a_plus` (0 < :attr:`a_plus` < 1), otherwise the deletion of a random atom of that species in the cell.
+The energy change is calculated with the :term:`NEP` model only.
+
+* :attr:`num_species`: number of species to be inserted and deleted.
+  For each species, one specifies the chemical symbol (:attr:`species_i`), the chemical potential (:attr:`mu_i`) in eV relative to the isolated atom, the mass (:attr:`mass_i`) in Dalton used for the thermal de Broglie wavelength and for the inserted atoms, and the energy of an isolated atom given by the :term:`NEP` model (:attr:`e0_i`) in eV, or :attr:`auto` to calculate it.
+* :attr:`parallel`: evaluate the trials of a sweep in parallel on the GPU.
+* :attr:`seed`: seed of the random numbers.
+* :attr:`overlap_cutoff`: an insertion of species :attr:`species` closer than :attr:`d` (in Å) to another atom is rejected before the energy is calculated. :attr:`d` must not exceed the radial cutoff of the :term:`NEP` model.
+
+When :attr:`mc gcmc` is used, the :ref:`run <kw_run>` is split into sub-runs of :attr:`md_steps` steps, similar to the :ref:`deposit keyword <kw_deposit>`.
+Each sub-run is an ordinary :term:`MD` run of the input with the :attr:`mc gcmc` line removed.
+After each sub-run, the final structure (positions, masses, velocities, and group labels) is read back, the trials are performed, and the result is written to :ref:`model.xyz <model_xyz>` for the next sub-run.
+The original input files are kept as ``run.in.original`` and ``model.xyz.original``, and ``model.xyz`` holds the structure after the last trials when the run finishes.
+
+* The :attr:`mc gcmc` line can appear anywhere in :ref:`run.in <run_in>`, and any ensemble can be used for the :term:`MD` part.
+* :ref:`run.in <run_in>` must contain exactly one :attr:`run` keyword, and its number of steps must be a multiple of :attr:`md_steps`.
+* :attr:`mc gcmc` cannot be combined with other :attr:`mc` lines, with :ref:`deposit <kw_deposit>`, or with spin models.
+* Inserted atoms belong to group 0 of every grouping method.
+* The run stops with an error if the trials leave fewer than two atoms.
+* Each sub-run starts from step 0 and appends to the output files. The state of the thermostat and barostat and the averaging windows of the outputs restart in every sub-run.
 
 Output
 ------
@@ -126,6 +155,21 @@ This means
 * Only the Al and Ag atoms are involved in the :term:`MC` process.
   The dimensionless :math:`\phi` parameters for Al and Ag are -2 and 0, respectively.
   The dimensionless :math:`\kappa` parameter is 10000.
+
+Example 4
+^^^^^^^^^
+
+Here is an example for inserting and deleting H atoms in the grand canonical ensemble::
+
+  mc gcmc 100 300 300 1 0.5 3 1 H -2.5 1.008 auto parallel overlap_cutoff 1 H 1.0
+  potential nep.txt
+
+This means
+
+* Perform one sweep of insertion and deletion trials of H after every 100 :term:`MD` steps at 300 K.
+* Insertions and deletions are proposed with equal probabilities, in cells at least 3 cutoffs apart.
+* The chemical potential of H is -2.5 eV, and the energy of an isolated H atom is calculated from the :term:`NEP` model.
+* Insertions closer than 1 Å to another atom are rejected.
 
 Notes
 -----
