@@ -347,7 +347,7 @@ double MC_Ensemble_GCMC::compute_isolated_atom_energy(int type)
     pe.data());
   float e = 0.0f;
   pe.copy_to_host(&e);
-  return (double)e;
+  return (double)e + nep_energy.energy_reference[type];
 }
 
 void MC_Ensemble_GCMC::ensure_gcmc_capacity(Atom& atom, Box& box, std::vector<Group>& groups)
@@ -711,6 +711,7 @@ void MC_Ensemble_GCMC::gcmc_phase(int md_step, double temperature, Atom& atom, B
           int t_ins = gcmc_types[s_idx];
           double mu = gcmc_mu[s_idx];
           double e0 = gcmc_e0[s_idx];
+          const double e_ref = nep_energy.energy_reference[t_ins];
           double lambda = LAMBDA_PREFACTOR / sqrt(gcmc_mass[s_idx] * temperature);
           double lambda3 = lambda * lambda * lambda;
 
@@ -773,7 +774,7 @@ void MC_Ensemble_GCMC::gcmc_phase(int md_step, double temperature, Atom& atom, B
               atom.type.copy_from_host(&ghost, 1, g);
               continue;
             }
-            double dU = E_present - E_absent;
+            double dU = E_present - E_absent + e_ref;
             double prefactor = ratio_ins * V_cell / (lambda3 * (N_s + 1));
             double boltzmann = exp(beta * (mu - (dU - e0)));
             double acc = prefactor * boltzmann;
@@ -821,7 +822,7 @@ void MC_Ensemble_GCMC::gcmc_phase(int md_step, double temperature, Atom& atom, B
             if (!present_absent(j, E_present, E_absent)) {
               continue;
             }
-            double dU = E_absent - E_present;
+            double dU = E_absent - E_present - e_ref;
             double prefactor = ratio_del * lambda3 * (double)N_s / V_cell;
             double boltzmann = exp(-beta * (mu + (dU + e0)));
             double acc = prefactor * boltzmann;
@@ -1456,12 +1457,13 @@ void MC_Ensemble_GCMC::gcmc_phase_parallel(int md_step, double temperature, Atom
       }
       double mu = gcmc_mu[s_idx];
       double e0 = gcmc_e0[s_idx];
+      const double e_ref = nep_energy.energy_reference[gcmc_types[s_idx]];
       double lambda = LAMBDA_PREFACTOR / sqrt(gcmc_mass[s_idx] * temperature);
       double lambda3 = lambda * lambda * lambda;
       int N_s = trials[m].N_s;
 
       if (trials[m].kind == INSERT) {
-        double dU = E_present - E_absent;
+        double dU = E_present - E_absent + e_ref;
         double prefactor = ratio_ins * V_cell / (lambda3 * (N_s + 1));
         double boltzmann = exp(beta * (mu - (dU - e0)));
         double acc = prefactor * boltzmann;
@@ -1487,7 +1489,7 @@ void MC_Ensemble_GCMC::gcmc_phase_parallel(int md_step, double temperature, Atom
         }
       } else {
         int j = trials[m].site;
-        double dU = E_absent - E_present;
+        double dU = E_absent - E_present - e_ref;
         double prefactor = ratio_del * lambda3 * (double)N_s / V_cell;
         double boltzmann = exp(-beta * (mu + (dU + e0)));
         double acc = prefactor * boltzmann;
