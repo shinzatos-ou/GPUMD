@@ -89,6 +89,7 @@ In each sweep, a random set of cells at least :attr:`n_sep` cutoffs apart is cho
 The energy change is calculated with the :term:`NEP` model only.
 
 * :attr:`max_ghost`: number of spare atom slots reserved for insertions. The number of atoms in the arrays is fixed; an empty slot (a ghost atom) has type -1 and is ignored by the :term:`NEP` model, the temperature, the :attr:`nvt_lan` thermostat, the :attr:`velocity` keyword, and the outputs of :attr:`dump_xyz`, :attr:`dump_restart`, and :attr:`dump_thermo`.
+  The candidate neighbor list of the :term:`NEP` model still contains the ghost atoms, so its capacity and memory are enlarged by the factor (number of atoms + :attr:`max_ghost`) / (number of atoms).
 * :attr:`num_species`: number of species to be inserted and deleted.
   For each species, one specifies the chemical symbol (:attr:`species_i`), the chemical potential (:attr:`mu_i`) in eV relative to the isolated atom, the mass (:attr:`mass_i`) in Dalton used for the thermal de Broglie wavelength and for the inserted atoms, and the energy of an isolated atom given by the :term:`NEP` model (:attr:`e0_i`) in eV, or :attr:`auto` to calculate it.
 * :attr:`parallel`: evaluate the trials of a sweep in parallel on the GPU.

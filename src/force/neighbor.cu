@@ -27,7 +27,10 @@ Major contributors:
 #include "utilities/gpu_macro.cuh"
 #include <algorithm>
 #include <cstring>
+#include <string>
 #include <thrust/execution_policy.h>
+#include <thrust/functional.h>
+#include <thrust/reduce.h>
 #include <thrust/scan.h>
 
 static __device__ void find_cell_id(
@@ -106,7 +109,8 @@ static __global__ void gpu_find_neighbor_ON1(
   const int ny,
   const int nz,
   const double rc_inv,
-  const float cutoff_square)
+  const float cutoff_square,
+  const int max_neighbors)
 {
   const int n1 = blockIdx.x * blockDim.x + threadIdx.x + N1;
   int count = 0;
@@ -159,7 +163,10 @@ static __global__ void gpu_find_neighbor_ON1(
               const float d2 = x12 * x12 + y12 * y12 + z12 * z12;
 
               if (d2 < cutoff_square) {
-                NL[static_cast<size_t>(N) * count++ + n1] = n2;
+                if (count < max_neighbors) {
+                  NL[static_cast<size_t>(N) * count + n1] = n2;
+                }
+                ++count;
               }
             }
           }
@@ -331,6 +338,7 @@ void find_neighbor(
   find_cell_list(
     rc_cell_list, num_bins, box, position_per_atom, cell_count, cell_count_sum, cell_contents);
 
+  const int MN = NL.size() / NN.size();
   gpu_find_neighbor_ON1<<<grid_size, block_size>>>(
     box,
     N,
@@ -349,10 +357,18 @@ void find_neighbor(
     num_bins[1],
     num_bins[2],
     rc_inv_cell_list,
-    rc * rc);
+    rc * rc,
+    MN);
   GPU_CHECK_KERNEL
 
-  const int MN = NL.size() / NN.size();
+  const int max_NN =
+    thrust::reduce(thrust::device, NN.data() + N1, NN.data() + N2, 0, thrust::maximum<int>());
+  if (max_NN > MN) {
+    const std::string error = "Neighbor list overflow: " + std::to_string(max_NN) +
+                              " neighbors exceed the capacity of " + std::to_string(MN) + ".";
+    PRINT_INPUT_ERROR(error.c_str());
+  }
+
   gpu_sort_neighbor_list<<<N, std::min(1024, MN), MN * sizeof(int)>>>(N, NN.data(), NL.data());
   GPU_CHECK_KERNEL
 }

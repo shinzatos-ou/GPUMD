@@ -16,13 +16,14 @@ from conftest import MODELS_DIR, make_bulk_C
 
 N_REAL = 1024
 MAX_GHOST = 1024
+N_REAL_LARGE = 3456
 NUM_SWEEPS = 20
 NUM_ACTIVE_CELLS = 1
 
 
-def _write_model(path):
-    atoms = make_bulk_C().repeat(4)
-    assert len(atoms) == N_REAL
+def _write_model(path, repeat=4):
+    atoms = make_bulk_C().repeat(repeat)
+    assert len(atoms) == 16 * repeat**3
     cell = atoms.cell.array
     lattice = ' '.join(f'{x:.10f}' for x in cell.flatten())
     lines = [
@@ -32,6 +33,10 @@ def _write_model(path):
     for symbol, position in zip(atoms.get_chemical_symbols(), atoms.positions):
         lines.append(f'{symbol} {position[0]:.10f} {position[1]:.10f} {position[2]:.10f}')
     path.write_text('\n'.join(lines) + '\n')
+
+
+def _write_large_model(path):
+    _write_model(path, repeat=6)
 
 
 def _write_isolated_pair(path):
@@ -44,18 +49,31 @@ def _write_isolated_pair(path):
     path.write_text('\n'.join(lines) + '\n')
 
 
-def _write_potential(path, energy_reference):
+def _write_potential(path, energy_reference, max_neighbors):
     potential = (MODELS_DIR / 'nep_C.txt').read_text()
     if energy_reference is not None:
         assert 'energy_reference 0\n' in potential
         potential = potential.replace(
             'energy_reference 0\n', f'energy_reference {energy_reference}\n'
         )
+    if max_neighbors is not None:
+        assert 'cutoff 7 4 358 71\n' in potential
+        max_radial, max_angular = max_neighbors
+        potential = potential.replace(
+            'cutoff 7 4 358 71\n', f'cutoff 7 4 {max_radial} {max_angular}\n'
+        )
     path.write_text(potential)
 
 
-def _run(tmp_path, gpumd_command, run_in, energy_reference=None, write_model=_write_model):
-    _write_potential(tmp_path / 'nep_C.txt', energy_reference)
+def _run(
+    tmp_path,
+    gpumd_command,
+    run_in,
+    energy_reference=None,
+    max_neighbors=None,
+    write_model=_write_model,
+):
+    _write_potential(tmp_path / 'nep_C.txt', energy_reference, max_neighbors)
     write_model(tmp_path / 'model.xyz')
     (tmp_path / 'run.in').write_text(run_in)
     return subprocess.run([gpumd_command], cwd=tmp_path, capture_output=True, text=True)
@@ -240,3 +258,32 @@ def test_gcmc_auto_e0_cancels_the_energy_reference(tmp_path, gpumd_command, mc_l
     e0_with, mcmd_with = outputs[1000.0]
     assert e0_with - e0_without == pytest.approx(1000.0, abs=1e-2)
     np.testing.assert_array_equal(mcmd_with, mcmd_without)
+
+
+def test_gcmc_ghost_atoms_fit_in_the_candidate_neighbor_list(tmp_path, gpumd_command):
+    result = _run(
+        tmp_path,
+        gpumd_command,
+        _gcmc_run_in(
+            f'mc gcmc 10 300 300 {NUM_SWEEPS} 0.5 3 {N_REAL_LARGE} 1 C 100 12.011 auto '
+            'parallel seed 5 overlap_cutoff 1 C 1.0'
+        ),
+        max_neighbors=(250, 71),
+        write_model=_write_large_model,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (
+        f'candidate neighbor capacity scaled by 2 for {N_REAL_LARGE} ghost atoms' in result.stdout
+    )
+
+
+def test_candidate_neighbor_list_overflow_is_an_error(tmp_path, gpumd_command):
+    result = _run(
+        tmp_path,
+        gpumd_command,
+        _gcmc_run_in(f'mc gcmc 10 300 300 1 0.5 3 {N_REAL_LARGE} 1 C -100 12.011 auto seed 3'),
+        max_neighbors=(20, 20),
+        write_model=_write_large_model,
+    )
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert 'Neighbor list overflow' in result.stdout + result.stderr

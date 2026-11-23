@@ -30,6 +30,7 @@ Major contributors:
 ------------------------------------------------------------------------------*/
 
 #include "force/neighbor.cuh"
+#include "model/atom.cuh"
 #include "nep.cuh"
 #include "nep_small_box.cuh"
 #include "utilities/common.cuh"
@@ -224,7 +225,16 @@ NEP::NEP(const char* file_potential, const int num_atoms, const RunInput& run_in
   nep_data.f12x.resize(num_atoms * paramb.MN_angular);
   nep_data.f12y.resize(num_atoms * paramb.MN_angular);
   nep_data.f12z.resize(num_atoms * paramb.MN_angular);
-  neighbor_manager.initialize(rc, num_atoms, paramb.MN_radial);
+  int num_candidate_neighbors = paramb.MN_radial;
+  if (g_gcmc_num_ghost_atoms > 0) {
+    const double ghost_factor = double(num_atoms) / (num_atoms - g_gcmc_num_ghost_atoms);
+    num_candidate_neighbors = int(ceil(paramb.MN_radial * ghost_factor));
+    printf(
+      "    candidate neighbor capacity scaled by %g for %d ghost atoms.\n",
+      ghost_factor,
+      g_gcmc_num_ghost_atoms);
+  }
+  neighbor_manager.initialize(rc, num_atoms, num_candidate_neighbors);
   nep_data.NN_radial.resize(num_atoms);
   nep_data.NL_radial.resize(static_cast<size_t>(num_atoms) * paramb.MN_radial);
   nep_data.NN_angular.resize(num_atoms);
