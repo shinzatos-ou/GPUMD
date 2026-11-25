@@ -10,6 +10,7 @@ import subprocess
 
 import numpy as np
 import pytest
+from ase.build import bulk
 from ase.io import read
 
 from conftest import MODELS_DIR, make_bulk_C
@@ -19,9 +20,7 @@ NUM_SWEEPS = 20
 NUM_ACTIVE_CELLS = 1
 
 
-def _write_model(path):
-    atoms = make_bulk_C().repeat(4)
-    assert len(atoms) == N_REAL
+def _write_atoms(path, atoms):
     cell = atoms.cell.array
     lattice = ' '.join(f'{x:.10f}' for x in cell.flatten())
     lines = [
@@ -31,6 +30,20 @@ def _write_model(path):
     for symbol, position in zip(atoms.get_chemical_symbols(), atoms.positions):
         lines.append(f'{symbol} {position[0]:.10f} {position[1]:.10f} {position[2]:.10f}')
     path.write_text('\n'.join(lines) + '\n')
+
+
+def _write_model(path):
+    atoms = make_bulk_C().repeat(4)
+    assert len(atoms) == N_REAL
+    _write_atoms(path, atoms)
+
+
+def _make_cubic_model():
+    return bulk('C', 'diamond', a=3.567, cubic=True).repeat(5)
+
+
+def _write_cubic_model(path):
+    _write_atoms(path, _make_cubic_model())
 
 
 def _write_isolated_pair(path):
@@ -133,6 +146,13 @@ def _gcmc_run_in(mc_line, ensemble='nvt_lan 300 300 100'):
         (
             'potential nep_C.txt\n'
             'mc gcmc 10 300 300 1 0.5 1 1 C -7 12.011 auto\n'
+            'run 10\n'
+            'minimize sd 1.0e-6 10\n',
+            'minimize should appear before run when mc gcmc is used',
+        ),
+        (
+            'potential nep_C.txt\n'
+            'mc gcmc 10 300 300 1 0.5 1 1 C -7 12.011 auto\n'
             'deposit 10 2 5.0 atom C 1 0\n'
             'run 10\n',
             'cannot be used together with deposit',
@@ -166,6 +186,35 @@ def test_gcmc_splits_the_run_into_sub_runs(tmp_path, gpumd_command):
     assert (tmp_path / 'run.in.original').read_text() == run_in
     assert (tmp_path / 'model.xyz.original').exists()
     assert not (tmp_path / 'gcmc_subrun.xyz').exists()
+
+
+def test_gcmc_runs_one_shot_commands_only_in_the_first_sub_run(tmp_path, gpumd_command):
+    run_in = (
+        'replicate 1 1 2\n'
+        'potential nep_C.txt\n'
+        'change_box 0.1\n'
+        'minimize sd 1.0e-6 10\n'
+        'velocity 300 seed 11\n'
+        'time_step 1\n'
+        'ensemble nvt_lan 300 300 100\n'
+        'mc gcmc 10 300 300 1 0.5 1 1 C -100 12.011 auto seed 3\n'
+        'dump_thermo 1\n'
+        'dump_xyz 10 dump.xyz\n'
+        'run 30\n'
+    )
+    result = _run(tmp_path, gpumd_command, run_in, write_model=_write_cubic_model)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.count('Start to do an energy minimization.') == 1
+    assert result.stdout.count('Change box:') == 1
+
+    model = _make_cubic_model()
+    counts = _read_mcmd(tmp_path / 'mcmd.out')[:, 3].astype(int).tolist()
+    frames = read(tmp_path / 'dump.xyz', index=':')
+    assert [len(frame) for frame in frames] == [2 * len(model)] + counts[:-1]
+
+    expected = model.repeat((1, 1, 2)).cell.array.diagonal() + 0.1
+    final = read(tmp_path / 'model.xyz')
+    np.testing.assert_allclose(final.cell.array.diagonal(), expected, atol=1e-6)
 
 
 def test_gcmc_low_chemical_potential_deletes_atoms(tmp_path, gpumd_command):

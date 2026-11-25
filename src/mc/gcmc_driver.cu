@@ -106,6 +106,24 @@ static int find_nep_type(const std::vector<std::string>& atom_symbols, const std
   return -1;
 }
 
+static bool is_one_shot_keyword(const std::string& keyword)
+{
+  static const char* one_shot_keywords[] = {
+    "replicate",
+    "change_box",
+    "minimize",
+    "compute_phonon",
+    "compute_hessian",
+    "compute_cohesive",
+    "compute_elastic"};
+  for (const char* one_shot_keyword : one_shot_keywords) {
+    if (keyword == one_shot_keyword) {
+      return true;
+    }
+  }
+  return false;
+}
+
 static void write_model(
   const std::string& filename,
   const int num_original_atoms,
@@ -377,6 +395,9 @@ void GCMC_Driver::analyze_run(const RunInput& run_input)
         PRINT_INPUT_ERROR("number of steps should be an integer.\n");
       }
       run_line = n;
+    } else if (is_one_shot_keyword(tokens[0]) && run_line >= 0) {
+      const std::string error = tokens[0] + " should appear before run when mc gcmc is used.\n";
+      PRINT_INPUT_ERROR(error.c_str());
     }
   }
   if (run_line < 0) {
@@ -397,19 +418,27 @@ void GCMC_Driver::analyze_run(const RunInput& run_input)
   }
   dump_line += " precision double";
 
-  std::vector<std::string> lines;
+  std::vector<std::string> first_lines;
+  std::vector<std::string> later_lines;
   for (int n = 0; n < (int)input_lines.size(); ++n) {
     if (n == gcmc_line) {
       continue;
     }
     if (n == run_line) {
-      lines.emplace_back(dump_line);
-      lines.emplace_back("run " + std::to_string(num_steps_md));
+      first_lines.emplace_back(dump_line);
+      first_lines.emplace_back("run " + std::to_string(num_steps_md));
+      later_lines.emplace_back(dump_line);
+      later_lines.emplace_back("run " + std::to_string(num_steps_md));
     } else {
-      lines.emplace_back(input_lines[n].raw_line);
+      first_lines.emplace_back(input_lines[n].raw_line);
+      const std::vector<std::string>& tokens = input_lines[n].tokens;
+      if (tokens.empty() || !is_one_shot_keyword(tokens[0])) {
+        later_lines.emplace_back(input_lines[n].raw_line);
+      }
     }
   }
-  subrun_lines.assign(num_subruns, lines);
+  subrun_lines.assign(num_subruns, later_lines);
+  subrun_lines[0] = first_lines;
 }
 
 void GCMC_Driver::initialize(const RunInput& run_input)

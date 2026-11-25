@@ -102,6 +102,7 @@ The original input files are kept as ``run.in.original`` and ``model.xyz.origina
 
 * The :attr:`mc gcmc` line can appear anywhere in :ref:`run.in <run_in>`, and any ensemble can be used for the :term:`MD` part.
 * :ref:`run.in <run_in>` must contain exactly one :attr:`run` keyword, and its number of steps must be a multiple of :attr:`md_steps`.
+* The commands that act when they are read, i.e., :ref:`replicate <kw_replicate>`, :ref:`change_box <kw_change_box>`, :ref:`minimize <kw_minimize>`, :ref:`compute_phonon <kw_compute_phonon>`, :ref:`compute_hessian <kw_compute_hessian>`, :ref:`compute_cohesive <kw_compute_cohesive>`, and :ref:`compute_elastic <kw_compute_elastic>`, are executed only in the first sub-run and must appear before :attr:`run`.
 * :attr:`mc gcmc` cannot be combined with other :attr:`mc` lines, with :ref:`deposit <kw_deposit>`, or with spin models.
 * Inserted atoms belong to group 0 of every grouping method.
 * The run stops with an error if the trials leave fewer than two atoms.
