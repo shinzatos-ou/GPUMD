@@ -323,6 +323,9 @@ void GCMC_Driver::parse_gcmc(const std::vector<std::string>& tokens)
         "unknown option for mc gcmc (expected parallel, seed or overlap_cutoff).\n");
     }
   }
+  if (gcmc_parallel && n_sep < 2) {
+    PRINT_INPUT_ERROR("n_sep of mc gcmc should be at least 2 with parallel.\n");
+  }
 
   gcmc.reset(new MC_Ensemble_GCMC(tokens, 0, potential_file_name));
   if (has_seed) {

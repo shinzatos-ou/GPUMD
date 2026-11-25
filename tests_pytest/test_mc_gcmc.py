@@ -113,6 +113,12 @@ def _gcmc_run_in(mc_line, ensemble='nvt_lan 300 300 100'):
         ),
         (
             'potential nep_C.txt\n'
+            'mc gcmc 10 300 300 1 0.5 1 1 C -7 12.011 auto parallel\n'
+            'run 10\n',
+            'n_sep of mc gcmc should be at least 2 with parallel',
+        ),
+        (
+            'potential nep_C.txt\n'
             'mc gcmc 10 300 300 1 0.5 1 1 C -7 12.011 auto\n'
             'run 15\n',
             'should be a multiple of N_md',
@@ -192,7 +198,7 @@ def test_gcmc_high_chemical_potential_inserts_atoms(tmp_path, gpumd_command):
         tmp_path,
         gpumd_command,
         _gcmc_run_in(
-            f'mc gcmc 10 300 300 {NUM_SWEEPS} 0.5 1 1 C 100 12.011 auto '
+            f'mc gcmc 10 300 300 {NUM_SWEEPS} 0.5 2 1 C 100 12.011 auto '
             'parallel seed 5 overlap_cutoff 1 C 1.0'
         ),
     )

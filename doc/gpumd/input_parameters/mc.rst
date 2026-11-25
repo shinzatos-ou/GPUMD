@@ -91,6 +91,7 @@ The energy change is calculated with the :term:`NEP` model only.
 * :attr:`num_species`: number of species to be inserted and deleted.
   For each species, one specifies the chemical symbol (:attr:`species_i`), the chemical potential (:attr:`mu_i`) in eV relative to the isolated atom, the mass (:attr:`mass_i`) in Dalton used for the thermal de Broglie wavelength and for the inserted atoms, and the energy of an isolated atom given by the :term:`NEP` model (:attr:`e0_i`) in eV, or :attr:`auto` to calculate it.
 * :attr:`parallel`: evaluate the trials of a sweep in parallel on the GPU.
+  :attr:`n_sep` must then be at least 2, because the energy change of a trial depends on the atoms within two cutoffs of it.
 * :attr:`seed`: seed of the random numbers.
 * :attr:`overlap_cutoff`: an insertion of species :attr:`species` closer than :attr:`d` (in Å) to another atom is rejected before the energy is calculated. :attr:`d` must not exceed the radial cutoff of the :term:`NEP` model.
 
