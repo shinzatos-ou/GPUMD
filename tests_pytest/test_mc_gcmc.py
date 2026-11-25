@@ -5,7 +5,7 @@ The 1024-atom diamond cell (the 16-atom fixture repeated 4 x 4 x 4) is about 16.
 not a small box for the 7 A radial cutoff of nep_C.txt. The run of 30 steps is split into three
 sub-runs of 10 steps, each followed by one call of the trials.
 """
-import shutil
+import re
 import subprocess
 
 import numpy as np
@@ -33,15 +33,41 @@ def _write_model(path):
     path.write_text('\n'.join(lines) + '\n')
 
 
-def _run(tmp_path, gpumd_command, run_in):
-    shutil.copy(MODELS_DIR / 'nep_C.txt', tmp_path / 'nep_C.txt')
-    _write_model(tmp_path / 'model.xyz')
+def _write_isolated_pair(path):
+    lines = [
+        '2',
+        'Lattice="30 0 0 0 30 0 0 0 30" pbc="T T T" Properties=species:S:1:pos:R:3',
+        'C 5 5 5',
+        'C 20 20 20',
+    ]
+    path.write_text('\n'.join(lines) + '\n')
+
+
+def _write_potential(path, energy_reference):
+    potential = (MODELS_DIR / 'nep_C.txt').read_text()
+    if energy_reference is not None:
+        assert 'energy_reference 0\n' in potential
+        potential = potential.replace(
+            'energy_reference 0\n', f'energy_reference {energy_reference}\n'
+        )
+    path.write_text(potential)
+
+
+def _run(tmp_path, gpumd_command, run_in, energy_reference=None, write_model=_write_model):
+    _write_potential(tmp_path / 'nep_C.txt', energy_reference)
+    write_model(tmp_path / 'model.xyz')
     (tmp_path / 'run.in').write_text(run_in)
     return subprocess.run([gpumd_command], cwd=tmp_path, capture_output=True, text=True)
 
 
 def _read_mcmd(path):
     return np.loadtxt(path, ndmin=2)
+
+
+def _read_auto_e0(stdout):
+    match = re.search(r'auto isolated-atom energy e0 = (\S+) eV', stdout)
+    assert match is not None, stdout
+    return float(match.group(1))
 
 
 def _gcmc_run_in(mc_line, ensemble='nvt_lan 300 300 100'):
@@ -202,3 +228,51 @@ def test_gcmc_works_with_other_thermostats(tmp_path, gpumd_command):
     assert np.all(np.isfinite(thermo))
     mcmd = _read_mcmd(tmp_path / 'mcmd.out')
     assert mcmd[-1, 3] > N_REAL
+
+
+def test_gcmc_auto_e0_is_the_isolated_atom_energy(tmp_path, gpumd_command):
+    result = _run(
+        tmp_path,
+        gpumd_command,
+        'potential nep_C.txt\n'
+        'time_step 1\n'
+        'ensemble nve\n'
+        'mc gcmc 1 300 300 1 0.5 3 1 C 100 12.011 auto seed 3\n'
+        'dump_thermo 1\n'
+        'run 1\n',
+        energy_reference=-5.0,
+        write_model=_write_isolated_pair,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    e0 = _read_auto_e0(result.stdout)
+    thermo = np.loadtxt(tmp_path / 'thermo.out', ndmin=2)
+    assert thermo[0, 2] / 2 == pytest.approx(e0, abs=1e-4)
+
+
+@pytest.mark.parametrize(
+    'mc_line',
+    [
+        f'mc gcmc 10 300 300 {NUM_SWEEPS} 0.5 1 1 C -100 12.011 auto seed 3',
+        f'mc gcmc 10 300 300 {NUM_SWEEPS} 0.5 2 1 C 100 12.011 auto '
+        'parallel seed 5 overlap_cutoff 1 C 1.0',
+    ],
+)
+def test_gcmc_auto_e0_cancels_the_energy_reference(tmp_path, gpumd_command, mc_line):
+    outputs = {}
+    for energy_reference in (0.0, 1000.0):
+        run_dir = tmp_path / f'reference_{energy_reference:g}'
+        run_dir.mkdir()
+        result = _run(
+            run_dir, gpumd_command, _gcmc_run_in(mc_line), energy_reference=energy_reference
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        outputs[energy_reference] = (
+            _read_auto_e0(result.stdout),
+            _read_mcmd(run_dir / 'mcmd.out'),
+        )
+
+    e0_without, mcmd_without = outputs[0.0]
+    e0_with, mcmd_with = outputs[1000.0]
+    assert e0_with - e0_without == pytest.approx(1000.0, abs=1e-2)
+    np.testing.assert_array_equal(mcmd_with, mcmd_without)
