@@ -34,6 +34,8 @@ Major contributors:
 #include <cmath>
 #include <cstring>
 
+static bool non_gcmc_mc_parsed = false;
+
 MC::MC(void) { action_name = "mc"; }
 
 MC::MC(
@@ -46,8 +48,15 @@ MC::MC(
 {
   action_name = "mc";
   if (tokens.size() > 1 && tokens[1] == "gcmc") {
+    if (non_gcmc_mc_parsed) {
+      PRINT_INPUT_ERROR("mc canonical, sgc, and vcsgc cannot be used together with mc gcmc.\n");
+    }
     parse_mc_gcmc(tokens, group, atom, box, force, potential_file_name);
   } else {
+    if (MC_Ensemble_GCMC::capacity_reserved()) {
+      PRINT_INPUT_ERROR("mc canonical, sgc, and vcsgc cannot be used together with mc gcmc.\n");
+    }
+    non_gcmc_mc_parsed = true;
     parse_mc(tokens, group, atom, potential_file_name);
   }
 }

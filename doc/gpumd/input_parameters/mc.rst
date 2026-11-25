@@ -101,6 +101,7 @@ It has to be given again in each run; the ghost atoms are added only once.
 Ghost atoms and inserted atoms belong to group 0 of every grouping method.
 Among the thermostats with random forces, only :attr:`nvt_lan` is supported.
 Spin models are not supported.
+The :attr:`canonical`, :attr:`sgc`, and :attr:`vcsgc` forms do not handle ghost atoms, so they cannot be combined with :attr:`mc gcmc`, neither in the same run nor in a later run.
 The keywords :attr:`correct_velocity`, :attr:`compute_rdf`, and the outputs other than those listed above do not skip ghost atoms.
 A line in :ref:`run.in <run_in>` can have at most 32 tokens, which limits the number of species and options in one :attr:`mc gcmc` line.
 

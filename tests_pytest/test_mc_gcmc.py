@@ -137,6 +137,24 @@ def _gcmc_run_in(mc_line):
             'run 1\n',
             'overlap_cutoff for mc gcmc should not exceed the NEP radial cutoff',
         ),
+        (
+            f'mc gcmc 10 300 300 1 0.5 3 {MAX_GHOST} 1 C -7 12.011 auto\n'
+            'mc sgc 10 10 300 300 1 C 0\n'
+            'potential nep_C.txt\n'
+            'run 1\n',
+            'cannot be used together with mc gcmc',
+        ),
+        (
+            f'mc gcmc 10 300 300 1 0.5 3 {MAX_GHOST} 1 C -7 12.011 auto\n'
+            'potential nep_C.txt\n'
+            'time_step 1\n'
+            'ensemble nve\n'
+            'run 1\n'
+            'mc canonical 10 10 300 300\n'
+            'ensemble nve\n'
+            'run 1\n',
+            'cannot be used together with mc gcmc',
+        ),
     ],
 )
 def test_gcmc_rejects_invalid_input(tmp_path, gpumd_command, run_in, message):
@@ -287,3 +305,23 @@ def test_candidate_neighbor_list_overflow_is_an_error(tmp_path, gpumd_command):
     )
     assert result.returncode != 0, result.stdout + result.stderr
     assert 'Neighbor list overflow' in result.stdout + result.stderr
+
+
+@pytest.mark.fast
+def test_gcmc_rejects_an_earlier_mc_line(tmp_path, gpumd_command):
+    (tmp_path / 'nep_water.txt').write_text((MODELS_DIR / 'nep_water.txt').read_text())
+    (tmp_path / 'model.xyz').write_text(
+        '2\n'
+        'Lattice="20 0 0 0 20 0 0 0 20" pbc="T T T" Properties=species:S:1:pos:R:3\n'
+        'O 5 5 5\n'
+        'H 15 15 15\n'
+    )
+    (tmp_path / 'run.in').write_text(
+        'mc canonical 10 10 300 300\n'
+        'mc gcmc 10 300 300 1 0.5 3 4 1 H -3 1.008 auto\n'
+        'potential nep_water.txt\n'
+        'run 1\n'
+    )
+    result = subprocess.run([gpumd_command], cwd=tmp_path, capture_output=True, text=True)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert 'cannot be used together with mc gcmc' in result.stdout + result.stderr
