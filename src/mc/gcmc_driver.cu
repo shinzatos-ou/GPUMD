@@ -124,6 +124,72 @@ static bool is_one_shot_keyword(const std::string& keyword)
   return false;
 }
 
+static std::string format_real(const double value)
+{
+  char buffer[32];
+  snprintf(buffer, sizeof(buffer), "%.17g", value);
+  return buffer;
+}
+
+static std::vector<int> get_schedule_indices(const std::vector<std::string>& tokens)
+{
+  std::vector<int> indices;
+  if (tokens.size() < 2) {
+    return indices;
+  }
+  const std::string& name = tokens[1];
+  if (
+    name == "nvt_ber" || name == "npt_ber" || name == "nvt_nhc" || name == "nvt_lan" ||
+    name == "nvt_bdp" || name == "nvt_bao" || name == "nvt_qtb" || name == "npt_scr") {
+    indices.push_back(2);
+  } else if (name == "pimd" || name == "pimd_scr") {
+    indices.push_back(3);
+  } else if (name == "nvt_mttk" || name == "npt_mttk" || name == "nph_mttk" || name == "npt_qtb") {
+    int i = 2;
+    while (i < (int)tokens.size()) {
+      const std::string& key = tokens[i];
+      if (key == "couple") {
+        i += 2;
+      } else if (
+        key == "temp" || key == "iso" || key == "aniso" || key == "tri" || key == "x" ||
+        key == "y" || key == "z" || key == "xy" || key == "xz" || key == "yz") {
+        indices.push_back(i + 1);
+        i += 3;
+      } else {
+        ++i;
+      }
+    }
+  }
+  return indices;
+}
+
+static std::string
+get_subrun_ensemble_line(const RunInputLine& line, const int subrun, const int num_subruns)
+{
+  std::vector<std::string> tokens = line.tokens;
+  bool has_schedule = false;
+  for (const int i : get_schedule_indices(tokens)) {
+    double start = 0.0;
+    double stop = 0.0;
+    if (
+      i + 1 >= (int)tokens.size() || !is_valid_real(tokens[i], &start) ||
+      !is_valid_real(tokens[i + 1], &stop) || start == stop) {
+      continue;
+    }
+    has_schedule = true;
+    tokens[i] = format_real(start + (stop - start) * subrun / num_subruns);
+    tokens[i + 1] = format_real(start + (stop - start) * (subrun + 1) / num_subruns);
+  }
+  if (!has_schedule) {
+    return line.raw_line;
+  }
+  std::string result = tokens[0];
+  for (size_t n = 1; n < tokens.size(); ++n) {
+    result += " " + tokens[n];
+  }
+  return result;
+}
+
 static void write_model(
   const std::string& filename,
   const int num_original_atoms,
@@ -418,27 +484,26 @@ void GCMC_Driver::analyze_run(const RunInput& run_input)
   }
   dump_line += " precision double";
 
-  std::vector<std::string> first_lines;
-  std::vector<std::string> later_lines;
-  for (int n = 0; n < (int)input_lines.size(); ++n) {
-    if (n == gcmc_line) {
-      continue;
-    }
-    if (n == run_line) {
-      first_lines.emplace_back(dump_line);
-      first_lines.emplace_back("run " + std::to_string(num_steps_md));
-      later_lines.emplace_back(dump_line);
-      later_lines.emplace_back("run " + std::to_string(num_steps_md));
-    } else {
-      first_lines.emplace_back(input_lines[n].raw_line);
+  subrun_lines.assign(num_subruns, std::vector<std::string>());
+  for (int k = 0; k < num_subruns; ++k) {
+    std::vector<std::string>& lines = subrun_lines[k];
+    for (int n = 0; n < (int)input_lines.size(); ++n) {
       const std::vector<std::string>& tokens = input_lines[n].tokens;
-      if (tokens.empty() || !is_one_shot_keyword(tokens[0])) {
-        later_lines.emplace_back(input_lines[n].raw_line);
+      if (n == gcmc_line) {
+        continue;
+      }
+      if (n == run_line) {
+        lines.emplace_back(dump_line);
+        lines.emplace_back("run " + std::to_string(num_steps_md));
+      } else if (tokens.empty()) {
+        lines.emplace_back(input_lines[n].raw_line);
+      } else if (tokens[0] == "ensemble") {
+        lines.emplace_back(get_subrun_ensemble_line(input_lines[n], k, num_subruns));
+      } else if (k == 0 || !is_one_shot_keyword(tokens[0])) {
+        lines.emplace_back(input_lines[n].raw_line);
       }
     }
   }
-  subrun_lines.assign(num_subruns, later_lines);
-  subrun_lines[0] = first_lines;
 }
 
 void GCMC_Driver::initialize(const RunInput& run_input)

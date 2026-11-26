@@ -285,6 +285,40 @@ def test_gcmc_works_with_other_thermostats(tmp_path, gpumd_command):
     assert mcmd[-1, 3] > N_REAL
 
 
+@pytest.mark.parametrize(
+    'ensemble, pattern, expected',
+    [
+        (
+            'nvt_ber 300 600 100',
+            r'initial temperature is (\S+) K\.\n\s*final temperature is (\S+) K\.',
+            [(300, 400), (400, 500), (500, 600)],
+        ),
+        (
+            'npt_mttk temp 300 600 iso 0 3 tperiod 100 pperiod 1000',
+            r't_start is (\S+), t_stop is (\S+),',
+            [(300, 400), (400, 500), (500, 600)],
+        ),
+        (
+            'npt_mttk temp 300 600 iso 0 3 tperiod 100 pperiod 1000',
+            r'xx : p_start is (\S+), p_stop is (\S+),',
+            [(0, 1), (1, 2), (2, 3)],
+        ),
+    ],
+)
+def test_gcmc_splits_the_ensemble_schedule_over_the_whole_run(
+    tmp_path, gpumd_command, ensemble, pattern, expected
+):
+    result = _run(
+        tmp_path,
+        gpumd_command,
+        _gcmc_run_in('mc gcmc 10 300 600 1 0.5 1 1 C -100 12.011 auto seed 3', ensemble=ensemble),
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    targets = [tuple(map(float, match)) for match in re.findall(pattern, result.stdout)]
+    np.testing.assert_allclose(targets, expected)
+
+
 def test_gcmc_auto_e0_is_the_isolated_atom_energy(tmp_path, gpumd_command):
     result = _run(
         tmp_path,
