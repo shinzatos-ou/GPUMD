@@ -160,6 +160,13 @@ def _gcmc_run_in(mc_line, ensemble='nvt_lan 300 300 100'):
         (
             'potential nep_C.txt\n'
             'mc gcmc 10 300 300 1 0.5 1 1 C -7 12.011 auto\n'
+            'dump_observer average 10 10 0 0\n'
+            'run 10\n',
+            'mc gcmc cannot be used together with dump_observer average',
+        ),
+        (
+            'potential nep_C.txt\n'
+            'mc gcmc 10 300 300 1 0.5 1 1 C -7 12.011 auto\n'
             'mc canonical 10 10 300 300\n'
             'run 10\n',
             'mc gcmc should be the only mc keyword',
@@ -338,6 +345,24 @@ def test_gcmc_splits_the_ensemble_schedule_over_the_whole_run(
     targets = [tuple(map(float, match)) for match in re.findall(pattern, result.stdout)]
     np.testing.assert_allclose(targets, expected)
 
+
+def test_gcmc_uses_the_first_potential(tmp_path, gpumd_command):
+    e0 = {}
+    for first, second in [
+        ('nep_C.txt', 'nep_C_shifted.txt'),
+        ('nep_C_shifted.txt', 'nep_C.txt'),
+    ]:
+        run_dir = tmp_path / first.replace('.txt', '')
+        run_dir.mkdir()
+        _write_potential(run_dir / 'nep_C_shifted.txt', 1000.0)
+        run_in = _gcmc_run_in('mc gcmc 10 300 300 1 0.5 1 1 C -100 12.011 auto seed 3').replace(
+            'potential nep_C.txt\n', f'potential {first}\npotential {second}\n'
+        )
+        result = _run(run_dir, gpumd_command, run_in)
+        assert result.returncode == 0, result.stdout + result.stderr
+        e0[first] = _read_auto_e0(result.stdout)
+
+    assert e0['nep_C_shifted.txt'] - e0['nep_C.txt'] == pytest.approx(1000.0, abs=1e-2)
 
 def test_gcmc_auto_e0_is_the_isolated_atom_energy(tmp_path, gpumd_command):
     result = _run(

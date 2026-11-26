@@ -104,7 +104,8 @@ The original input files are kept as ``run.in.original`` and ``model.xyz.origina
 * :ref:`run.in <run_in>` must contain exactly one :attr:`run` keyword, and its number of steps must be a multiple of :attr:`md_steps`.
 * The commands that act when they are read, i.e., :ref:`replicate <kw_replicate>`, :ref:`change_box <kw_change_box>`, :ref:`minimize <kw_minimize>`, :ref:`compute_phonon <kw_compute_phonon>`, :ref:`compute_hessian <kw_compute_hessian>`, :ref:`compute_cohesive <kw_compute_cohesive>`, and :ref:`compute_elastic <kw_compute_elastic>`, are executed only in the first sub-run and must appear before :attr:`run`.
 * If the target temperature or pressure of the :ref:`standard <kw_ensemble_standard>`, :ref:`QTB <kw_ensemble_qtb>`, :ref:`MTTK <kw_ensemble_mttk>`, or :ref:`PIMD <kw_ensemble_pimd>` ensemble changes during the run (:attr:`T_1` to :attr:`T_2`, or :attr:`p_1` to :attr:`p_2`), the targets of each sub-run are set so that they change linearly over the whole run.
-* :attr:`mc gcmc` cannot be combined with other :attr:`mc` lines, with :ref:`deposit <kw_deposit>`, or with spin models.
+* :attr:`mc gcmc` cannot be combined with other :attr:`mc` lines, with :ref:`deposit <kw_deposit>`, with the ``average`` mode of :ref:`dump_observer <kw_dump_observer>`, or with spin models.
+* The trials use the first :ref:`potential <kw_potential>` in :ref:`run.in <run_in>`, which is also the potential that propagates the :term:`MD`.
 * Inserted atoms belong to group 0 of every grouping method.
 * The run stops with an error if the trials leave fewer than two atoms.
 * Each sub-run starts from step 0 and appends to the output files. The state of the thermostat and barostat and the averaging windows of the outputs restart in every sub-run.

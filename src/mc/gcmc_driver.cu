@@ -106,6 +106,17 @@ static int find_nep_type(const std::vector<std::string>& atom_symbols, const std
   return -1;
 }
 
+static std::string get_first_potential_file(const RunInput& run_input)
+{
+  for (const auto& line : run_input.lines()) {
+    if (line.tokens.size() >= 2 && line.tokens[0] == "potential") {
+      return line.tokens[1];
+    }
+  }
+  PRINT_INPUT_ERROR("There is no 'potential' keyword in run.in.");
+  return "";
+}
+
 static bool is_one_shot_keyword(const std::string& keyword)
 {
   static const char* one_shot_keywords[] = {
@@ -453,6 +464,8 @@ void GCMC_Driver::analyze_run(const RunInput& run_input)
       gcmc_line = n;
     } else if (tokens[0] == "deposit") {
       PRINT_INPUT_ERROR("mc gcmc cannot be used together with deposit.\n");
+    } else if (tokens[0] == "dump_observer" && tokens.size() >= 2 && tokens[1] == "average") {
+      PRINT_INPUT_ERROR("mc gcmc cannot be used together with dump_observer average.\n");
     } else if (tokens[0] == "run") {
       if (run_line >= 0) {
         PRINT_INPUT_ERROR("run should appear only once in run.in when mc gcmc is used.\n");
@@ -514,7 +527,7 @@ void GCMC_Driver::initialize(const RunInput& run_input)
   for (const auto& line : run_input.lines()) {
     input_raw_lines.emplace_back(line.raw_line);
   }
-  potential_file_name = get_filename_potential(run_input);
+  potential_file_name = get_first_potential_file(run_input);
   atom_symbols_in_nep = get_atom_symbols(potential_file_name);
   has_group = model_has_group("model.xyz");
   std::remove(SUBRUN_XYZ);
