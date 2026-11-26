@@ -399,7 +399,7 @@ void MC_Ensemble_GCMC::write_statistics(
   const std::vector<int>& num_ins_accept,
   const std::vector<int>& num_del_attempt,
   const std::vector<int>& num_del_accept,
-  const std::vector<int>& num_ins_overlap)
+  const std::vector<int>& num_overlap)
 {
   std::vector<int> count(gcmc_types.size(), 0);
   for (int n = 0; n < (int)htype.size(); ++n) {
@@ -423,7 +423,7 @@ void MC_Ensemble_GCMC::write_statistics(
     mc_output << " " << count[s] << " " << ratio(num_ins_accept[s], num_ins_attempt[s]) << " "
               << ratio(num_del_accept[s], num_del_attempt[s]);
     if (!overlap_cutoff2_by_type.empty()) {
-      mc_output << " " << num_ins_overlap[s];
+      mc_output << " " << num_overlap[s];
     }
   }
   mc_output << std::endl;
@@ -623,8 +623,25 @@ void MC_Ensemble_GCMC::gcmc_phase(int md_step, double temperature, Atom& atom, B
   std::vector<int> num_ins_accept(gcmc_species.size(), 0);
   std::vector<int> num_del_attempt(gcmc_species.size(), 0);
   std::vector<int> num_del_accept(gcmc_species.size(), 0);
-  std::vector<int> num_ins_overlap(gcmc_species.size(), 0);
+  std::vector<int> num_overlap(gcmc_species.size(), 0);
   const bool overlap_cutoff_active = !overlap_cutoff2_by_type.empty();
+
+  auto has_overlap = [&](int site, double x, double y, double z, int type) -> bool {
+    if (
+      !overlap_cutoff_active || type >= (int)overlap_cutoff2_by_type.size() ||
+      overlap_cutoff2_by_type[type] <= 0.0f) {
+      return false;
+    }
+    CHECK(gpuMemset(candidate_min_d2.data(), 0x7f, sizeof(unsigned int)));
+    min_dist2_to_active<<<blocks, 64>>>(
+      cap, box, site, x, y, z, g_x, g_y, g_z, atom.type.data(), candidate_min_d2.data());
+    GPU_CHECK_KERNEL
+    unsigned int md2_bits;
+    candidate_min_d2.copy_to_host(&md2_bits, 1);
+    float md2;
+    std::memcpy(&md2, &md2_bits, sizeof(float));
+    return md2 < overlap_cutoff2_by_type[type];
+  };
 
   for (int sweep = 0; sweep < num_gcmc_sweeps; ++sweep) {
     std::vector<std::vector<int>> cell_atoms(n_total);
@@ -702,23 +719,11 @@ void MC_Ensemble_GCMC::gcmc_phase(int md_step, double temperature, Atom& atom, B
             atom.position_per_atom.copy_from_host(&Bz, 1, 2 * cap + g);
             atom.type.copy_from_host(&t_ins, 1, g);
 
-            if (
-              overlap_cutoff_active && t_ins < (int)overlap_cutoff2_by_type.size() &&
-              overlap_cutoff2_by_type[t_ins] > 0.0f) {
-              CHECK(gpuMemset(candidate_min_d2.data(), 0x7f, sizeof(unsigned int)));
-              min_dist2_to_active<<<blocks, 64>>>(
-                cap, box, g, Bx, By, Bz, g_x, g_y, g_z, atom.type.data(), candidate_min_d2.data());
-              GPU_CHECK_KERNEL
-              unsigned int md2_bits;
-              candidate_min_d2.copy_to_host(&md2_bits, 1);
-              float md2;
-              std::memcpy(&md2, &md2_bits, sizeof(float));
-              if (md2 < overlap_cutoff2_by_type[t_ins]) {
-                int ghost = GHOST_TYPE;
-                atom.type.copy_from_host(&ghost, 1, g);
-                ++num_ins_overlap[s_idx];
-                continue;
-              }
+            if (has_overlap(g, Bx, By, Bz, t_ins)) {
+              int ghost = GHOST_TYPE;
+              atom.type.copy_from_host(&ghost, 1, g);
+              ++num_overlap[s_idx];
+              continue;
             }
 
             double E_present, E_absent;
@@ -769,6 +774,10 @@ void MC_Ensemble_GCMC::gcmc_phase(int md_step, double temperature, Atom& atom, B
               }
             }
             int j = candidates[(int)(uni(rng) * candidates.size()) % candidates.size()];
+            if (has_overlap(j, hpos[j], hpos[cap + j], hpos[2 * cap + j], t_ins)) {
+              ++num_overlap[s_idx];
+              continue;
+            }
 
             double E_present, E_absent;
             if (!present_absent(j, E_present, E_absent)) {
@@ -807,13 +816,7 @@ void MC_Ensemble_GCMC::gcmc_phase(int md_step, double temperature, Atom& atom, B
   }
 
   write_statistics(
-    md_step,
-    htype,
-    num_ins_attempt,
-    num_ins_accept,
-    num_del_attempt,
-    num_del_accept,
-    num_ins_overlap);
+    md_step, htype, num_ins_attempt, num_ins_accept, num_del_attempt, num_del_accept, num_overlap);
 }
 
 static __global__ void gcmc_par_find_site_neighbors(
@@ -1051,7 +1054,7 @@ void MC_Ensemble_GCMC::gcmc_phase_parallel(int md_step, double temperature, Atom
   std::vector<int> num_ins_accept(gcmc_species.size(), 0);
   std::vector<int> num_del_attempt(gcmc_species.size(), 0);
   std::vector<int> num_del_accept(gcmc_species.size(), 0);
-  std::vector<int> num_ins_overlap(gcmc_species.size(), 0);
+  std::vector<int> num_overlap(gcmc_species.size(), 0);
   const bool overlap_cutoff_active = !overlap_cutoff2_by_type.empty();
 
   auto min_image_d2 =
@@ -1180,7 +1183,6 @@ void MC_Ensemble_GCMC::gcmc_phase_parallel(int md_step, double temperature, Atom
     int site;
     int s_idx;
     int N_s;
-    double Bx, By, Bz;
   };
 
   for (int sweep = 0; sweep < num_gcmc_sweeps; ++sweep) {
@@ -1252,7 +1254,7 @@ void MC_Ensemble_GCMC::gcmc_phase_parallel(int md_step, double temperature, Atom
             hpos[g] = Bx;
             hpos[cap + g] = By;
             hpos[2 * cap + g] = Bz;
-            trials.push_back({INSERT, g, s_idx, N_s, Bx, By, Bz});
+            trials.push_back({INSERT, g, s_idx, N_s});
           } else {
             ++num_del_attempt[s_idx];
             if (N_s == 0) {
@@ -1265,7 +1267,7 @@ void MC_Ensemble_GCMC::gcmc_phase_parallel(int md_step, double temperature, Atom
               }
             }
             int j = cand[(int)(uni(rng) * cand.size()) % cand.size()];
-            trials.push_back({DELETE, j, s_idx, N_s, 0.0, 0.0, 0.0});
+            trials.push_back({DELETE, j, s_idx, N_s});
           }
         }
       }
@@ -1331,19 +1333,20 @@ void MC_Ensemble_GCMC::gcmc_phase_parallel(int md_step, double temperature, Atom
         valid[m] = 0;
         continue;
       }
-      if (overlap_cutoff_active && trials[m].kind == INSERT) {
+      if (overlap_cutoff_active) {
         int t_ins = gcmc_types[trials[m].s_idx];
         if (t_ins < (int)overlap_cutoff2_by_type.size() && overlap_cutoff2_by_type[t_ins] > 0.0f) {
+          const int s = trials[m].site;
           bool overlap = false;
           for (int i = 0; i < NN; ++i) {
             int nb = site_NL[(size_t)m * max_nb + i];
-            if (nb == trials[m].site) {
+            if (nb == s) {
               continue;
             }
             double d2 = min_image_d2(
-              trials[m].Bx,
-              trials[m].By,
-              trials[m].Bz,
+              hpos[s],
+              hpos[cap + s],
+              hpos[2 * cap + s],
               hpos[nb],
               hpos[cap + nb],
               hpos[2 * cap + nb]);
@@ -1354,7 +1357,7 @@ void MC_Ensemble_GCMC::gcmc_phase_parallel(int md_step, double temperature, Atom
           }
           if (overlap) {
             valid[m] = 0;
-            ++num_ins_overlap[trials[m].s_idx];
+            ++num_overlap[trials[m].s_idx];
             continue;
           }
         }
@@ -1452,11 +1455,5 @@ void MC_Ensemble_GCMC::gcmc_phase_parallel(int md_step, double temperature, Atom
   }
 
   write_statistics(
-    md_step,
-    htype,
-    num_ins_attempt,
-    num_ins_accept,
-    num_del_attempt,
-    num_del_accept,
-    num_ins_overlap);
+    md_step, htype, num_ins_attempt, num_ins_accept, num_del_attempt, num_del_accept, num_overlap);
 }

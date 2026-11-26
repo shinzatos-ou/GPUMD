@@ -93,7 +93,7 @@ The energy change is calculated with the :term:`NEP` model only.
 * :attr:`parallel`: evaluate the trials of a sweep in parallel on the GPU.
   :attr:`n_sep` must then be at least 2, because the energy change of a trial depends on the atoms within two cutoffs of it.
 * :attr:`seed`: seed of the random numbers.
-* :attr:`overlap_cutoff`: an insertion of species :attr:`species` closer than :attr:`d` (in Å) to another atom is rejected before the energy is calculated. :attr:`d` must not exceed the radial cutoff of the :term:`NEP` model.
+* :attr:`overlap_cutoff`: an insertion of species :attr:`species` closer than :attr:`d` (in Å) to another atom is rejected before the energy is calculated, and so is the deletion of an atom of that species that has another atom closer than :attr:`d`, which keeps the insertions and deletions reversible. :attr:`d` must not exceed the radial cutoff of the :term:`NEP` model.
 
 When :attr:`mc gcmc` is used, the :ref:`run <kw_run>` is split into sub-runs of :attr:`md_steps` steps, similar to the :ref:`deposit keyword <kw_deposit>`.
 Each sub-run is an ordinary :term:`MD` run of the input with the :attr:`mc gcmc` line removed.
@@ -172,7 +172,7 @@ This means
 * Perform one sweep of insertion and deletion trials of H after every 100 :term:`MD` steps at 300 K.
 * Insertions and deletions are proposed with equal probabilities, in cells at least 3 cutoffs apart.
 * The chemical potential of H is -2.5 eV, and the energy of an isolated H atom is calculated from the :term:`NEP` model.
-* Insertions closer than 1 Å to another atom are rejected.
+* Insertions closer than 1 Å to another atom, and deletions of H atoms that have another atom within 1 Å, are rejected.
 
 Notes
 -----

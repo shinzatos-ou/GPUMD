@@ -267,6 +267,26 @@ def test_gcmc_high_chemical_potential_inserts_atoms(tmp_path, gpumd_command):
     assert len(read(tmp_path / 'model.xyz')) == counts[-1]
 
 
+@pytest.mark.parametrize(
+    'mc_line',
+    [
+        f'mc gcmc 10 300 300 {NUM_SWEEPS} 0.5 1 1 C -100 12.011 auto seed 3 '
+        'overlap_cutoff 1 C 2.0',
+        f'mc gcmc 10 300 300 {NUM_SWEEPS} 0.5 2 1 C -100 12.011 auto parallel seed 5 '
+        'overlap_cutoff 1 C 2.0',
+    ],
+)
+def test_gcmc_overlap_cutoff_rejects_deletions(tmp_path, gpumd_command, mc_line):
+    result = _run(tmp_path, gpumd_command, _gcmc_run_in(mc_line))
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    mcmd = _read_mcmd(tmp_path / 'mcmd.out')
+    assert mcmd.shape == (3, 7)
+    assert np.all(mcmd[:, 3] == N_REAL)
+    assert np.all(mcmd[:, 5] == 0.0)
+    np.testing.assert_array_equal(mcmd[:, 6], mcmd[:, 2])
+
+
 def test_gcmc_works_with_other_thermostats(tmp_path, gpumd_command):
     result = _run(
         tmp_path,

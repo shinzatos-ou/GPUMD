@@ -92,5 +92,5 @@ private:
     const std::vector<int>& num_ins_accept,
     const std::vector<int>& num_del_attempt,
     const std::vector<int>& num_del_accept,
-    const std::vector<int>& num_ins_overlap);
+    const std::vector<int>& num_overlap);
 };
