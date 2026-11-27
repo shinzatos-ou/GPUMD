@@ -20,13 +20,13 @@ NUM_SWEEPS = 20
 NUM_ACTIVE_CELLS = 1
 
 
-def _write_atoms(path, atoms, labels=None):
+def _write_atoms(path, atoms, labels=None, pbc='T T T'):
     cell = atoms.cell.array
     lattice = ' '.join(f'{x:.10f}' for x in cell.flatten())
     properties = 'species:S:1:pos:R:3' if labels is None else 'species:S:1:pos:R:3:group:I:1'
     lines = [
         f'{len(atoms)}',
-        f'Lattice="{lattice}" pbc="T T T" Properties={properties}',
+        f'Lattice="{lattice}" pbc="{pbc}" Properties={properties}',
     ]
     for n, (symbol, position) in enumerate(zip(atoms.get_chemical_symbols(), atoms.positions)):
         line = f'{symbol} {position[0]:.10f} {position[1]:.10f} {position[2]:.10f}'
@@ -46,6 +46,10 @@ def _write_grouped_model(path):
     atoms = make_bulk_C().repeat(4)
     assert len(atoms) == N_REAL
     _write_atoms(path, atoms, [n % 2 for n in range(len(atoms))])
+
+
+def _write_free_z_model(path):
+    _write_atoms(path, make_bulk_C().repeat(4), pbc='T T F')
 
 
 def _make_cubic_model():
@@ -260,6 +264,16 @@ def test_gcmc_writes_outputs_at_the_steps_of_the_whole_run(tmp_path, gpumd_comma
     frames = read(tmp_path / 'dump.xyz', index=':')
     assert [len(frame) for frame in frames] == [counts[0], counts[2], counts[4]]
 
+
+def test_gcmc_rejects_a_nonperiodic_box(tmp_path, gpumd_command):
+    result = _run(
+        tmp_path,
+        gpumd_command,
+        _gcmc_run_in('mc gcmc 10 300 300 1 0.5 1 1 C -100 12.011 auto seed 3'),
+        write_model=_write_free_z_model,
+    )
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert 'mc gcmc needs periodic boundaries in all directions' in result.stdout + result.stderr
 
 def test_gcmc_keeps_an_existing_original_model(tmp_path, gpumd_command):
     original = tmp_path / 'model.xyz.original'

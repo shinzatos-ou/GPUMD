@@ -97,6 +97,28 @@ static int get_number_of_grouping_methods(const std::string& filename)
   return 0;
 }
 
+static bool model_is_periodic(const std::string& filename)
+{
+  std::ifstream input(filename);
+  if (!input.is_open()) {
+    PRINT_INPUT_ERROR("Failed to open model.xyz.");
+  }
+  std::string line;
+  std::getline(input, line);
+  const std::vector<std::string> tokens = get_tokens_without_unwanted_spaces(input);
+  auto is_true = [](const char c) { return std::tolower(static_cast<unsigned char>(c)) == 't'; };
+  for (int n = 0; n + 2 < (int)tokens.size(); ++n) {
+    std::string key = tokens[n].substr(0, 4);
+    std::transform(
+      key.begin(), key.end(), key.begin(), [](unsigned char c) { return std::tolower(c); });
+    if (key == "pbc=") {
+      return is_true(tokens[n].back()) && tokens[n + 1].size() == 1 && is_true(tokens[n + 1][0]) &&
+             is_true(tokens[n + 2].front());
+    }
+  }
+  return true;
+}
+
 static int find_nep_type(const std::vector<std::string>& atom_symbols, const std::string& symbol)
 {
   for (int n = 0; n < (int)atom_symbols.size(); ++n) {
@@ -635,6 +657,9 @@ void GCMC_Driver::initialize(const RunInput& run_input)
   if (std::ifstream("model.xyz.original").is_open()) {
     PRINT_INPUT_ERROR(
       "model.xyz.original already exists; move or remove it before running mc gcmc.\n");
+  }
+  if (!model_is_periodic("model.xyz")) {
+    PRINT_INPUT_ERROR("mc gcmc needs periodic boundaries in all directions.\n");
   }
 
   for (const auto& line : run_input.lines()) {

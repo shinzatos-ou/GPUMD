@@ -108,6 +108,7 @@ The run stops with an error if ``model.xyz.original`` already exists, so that a 
 * The commands that act when they are read, i.e., :ref:`replicate <kw_replicate>`, :ref:`change_box <kw_change_box>`, :ref:`minimize <kw_minimize>`, :ref:`compute_phonon <kw_compute_phonon>`, :ref:`compute_hessian <kw_compute_hessian>`, :ref:`compute_cohesive <kw_compute_cohesive>`, and :ref:`compute_elastic <kw_compute_elastic>`, are executed only in the first sub-run and must appear before :attr:`run`.
 * If the target temperature or pressure of the :ref:`standard <kw_ensemble_standard>`, :ref:`QTB <kw_ensemble_qtb>`, :ref:`MTTK <kw_ensemble_mttk>`, or :ref:`PIMD <kw_ensemble_pimd>` ensemble changes during the run (:attr:`T_1` to :attr:`T_2`, or :attr:`p_1` to :attr:`p_2`), the targets of each sub-run are set so that they change linearly over the whole run.
 * :attr:`mc gcmc` cannot be combined with other :attr:`mc` lines, with :ref:`deposit <kw_deposit>`, with the ``average`` mode of :ref:`dump_observer <kw_dump_observer>`, or with spin models.
+* The box must be periodic in all directions.
 * The trials use the first :ref:`potential <kw_potential>` in :ref:`run.in <run_in>`, which is also the potential that propagates the :term:`MD`.
 * Without :attr:`group`, inserted atoms belong to group 0 of every grouping method, so keywords that act on group 0, such as :ref:`fix <kw_fix>` and :ref:`move <kw_move>`, also act on them.
 * The run stops with an error if the trials leave fewer than two atoms.
