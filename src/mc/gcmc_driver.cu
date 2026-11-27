@@ -685,8 +685,10 @@ RunInput GCMC_Driver::prepare_subrun(int run_idx)
 
 void GCMC_Driver::mc_step(int run_idx)
 {
-  copy_file(SUBRUN_XYZ, "model.xyz");
-  std::remove(SUBRUN_XYZ);
+  std::remove("model.xyz");
+  if (std::rename(SUBRUN_XYZ, "model.xyz") != 0) {
+    PRINT_INPUT_ERROR("Failed to move gcmc_subrun.xyz to model.xyz.");
+  }
 
   RunInput run_input(input_raw_lines);
   Atom atom;
