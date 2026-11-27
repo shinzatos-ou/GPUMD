@@ -190,9 +190,23 @@ def test_gcmc_splits_the_run_into_sub_runs(tmp_path, gpumd_command):
     assert np.all(np.isfinite(thermo))
     assert 270.0 < thermo[0, 0] < 330.0
 
-    assert (tmp_path / 'run.in.original').read_text() == run_in
+    assert (tmp_path / 'run.in').read_text() == run_in
+    assert not (tmp_path / 'run.in.original').exists()
     assert (tmp_path / 'model.xyz.original').exists()
     assert not (tmp_path / 'gcmc_subrun.xyz').exists()
+
+
+def test_gcmc_keeps_an_existing_original_model(tmp_path, gpumd_command):
+    original = tmp_path / 'model.xyz.original'
+    original.write_text('keep\n')
+    result = _run(
+        tmp_path,
+        gpumd_command,
+        _gcmc_run_in('mc gcmc 10 300 300 1 0.5 1 1 C -100 12.011 auto seed 3'),
+    )
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert 'model.xyz.original already exists' in result.stdout + result.stderr
+    assert original.read_text() == 'keep\n'
 
 
 def test_gcmc_runs_one_shot_commands_only_in_the_first_sub_run(tmp_path, gpumd_command):

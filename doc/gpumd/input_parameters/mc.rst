@@ -98,7 +98,9 @@ The energy change is calculated with the :term:`NEP` model only.
 When :attr:`mc gcmc` is used, the :ref:`run <kw_run>` is split into sub-runs of :attr:`md_steps` steps, similar to the :ref:`deposit keyword <kw_deposit>`.
 Each sub-run is an ordinary :term:`MD` run of the input with the :attr:`mc gcmc` line removed.
 After each sub-run, the final structure (positions, masses, velocities, and group labels) is read back, the trials are performed, and the result is written to :ref:`model.xyz <model_xyz>` for the next sub-run.
-The original input files are kept as ``run.in.original`` and ``model.xyz.original``, and ``model.xyz`` holds the structure after the last trials when the run finishes.
+:ref:`run.in <run_in>` is not changed.
+The original ``model.xyz`` is kept as ``model.xyz.original``, and ``model.xyz`` holds the structure after the last trials when the run finishes.
+The run stops with an error if ``model.xyz.original`` already exists, so that a second run in the same directory does not overwrite it.
 
 * The :attr:`mc gcmc` line can appear anywhere in :ref:`run.in <run_in>`, and any ensemble can be used for the :term:`MD` part.
 * :ref:`run.in <run_in>` must contain exactly one :attr:`run` keyword, and its number of steps must be a multiple of :attr:`md_steps`.

@@ -521,8 +521,10 @@ void GCMC_Driver::analyze_run(const RunInput& run_input)
 
 void GCMC_Driver::initialize(const RunInput& run_input)
 {
-  copy_file("run.in", "run.in.original");
-  copy_file("model.xyz", "model.xyz.original");
+  if (std::ifstream("model.xyz.original").is_open()) {
+    PRINT_INPUT_ERROR(
+      "model.xyz.original already exists; move or remove it before running mc gcmc.\n");
+  }
 
   for (const auto& line : run_input.lines()) {
     input_raw_lines.emplace_back(line.raw_line);
@@ -533,6 +535,7 @@ void GCMC_Driver::initialize(const RunInput& run_input)
   std::remove(SUBRUN_XYZ);
 
   analyze_run(run_input);
+  copy_file("model.xyz", "model.xyz.original");
   printf("Split run.in into %d sub-runs of %d steps for mc gcmc.\n", num_subruns, num_steps_md);
 }
 
@@ -540,15 +543,6 @@ RunInput GCMC_Driver::prepare_subrun(int run_idx)
 {
   printf("Running sub-run %d / %d.\n", run_idx + 1, num_subruns);
   fflush(stdout);
-
-  std::ofstream out("run.in");
-  if (!out.is_open()) {
-    PRINT_INPUT_ERROR("Failed to open run.in for writing.");
-  }
-  for (const auto& line : subrun_lines[run_idx]) {
-    out << line << "\n";
-  }
-  out.close();
 
   return RunInput(subrun_lines[run_idx]);
 }
