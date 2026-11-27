@@ -111,6 +111,9 @@ The run stops with an error if ``model.xyz.original`` already exists, so that a 
 * Inserted atoms belong to group 0 of every grouping method.
 * The run stops with an error if the trials leave fewer than two atoms.
 * Each sub-run starts from step 0 and appends to the output files. The state of the thermostat and barostat and the averaging windows of the outputs restart in every sub-run.
+* The interval of :ref:`dump_thermo <kw_dump_thermo>`, :ref:`dump_xyz <kw_dump_xyz>`, :ref:`dump_restart <kw_dump_restart>`, :ref:`dump_netcdf <kw_dump_netcdf>`, :ref:`dump_beads <kw_dump_beads>`, :ref:`dump_dipole <kw_dump_dipole>`, :ref:`dump_polarizability <kw_dump_polarizability>`, ``dump_cg``, and :ref:`active <kw_active>` must divide :attr:`md_steps` or be a multiple of it, and the outputs are then written at the same steps as in a run without :attr:`mc gcmc`.
+  The intervals of :ref:`dump_observer <kw_dump_observer>`, and the product of the sample and output intervals of :ref:`compute <kw_compute>`, must divide :attr:`md_steps`.
+  A :attr:`dump_xyz` filename ending in ``*`` cannot be used.
 
 Output
 ------

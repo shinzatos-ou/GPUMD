@@ -142,6 +142,15 @@ static std::string format_real(const double value)
   return buffer;
 }
 
+static std::string join_tokens(const std::vector<std::string>& tokens)
+{
+  std::string result = tokens[0];
+  for (size_t n = 1; n < tokens.size(); ++n) {
+    result += " " + tokens[n];
+  }
+  return result;
+}
+
 static std::vector<int> get_schedule_indices(const std::vector<std::string>& tokens)
 {
   std::vector<int> indices;
@@ -194,11 +203,77 @@ get_subrun_ensemble_line(const RunInputLine& line, const int subrun, const int n
   if (!has_schedule) {
     return line.raw_line;
   }
-  std::string result = tokens[0];
-  for (size_t n = 1; n < tokens.size(); ++n) {
-    result += " " + tokens[n];
+  return join_tokens(tokens);
+}
+
+static bool is_periodic_output_keyword(const std::string& keyword)
+{
+  static const char* periodic_output_keywords[] = {
+    "dump_thermo",
+    "dump_xyz",
+    "dump_restart",
+    "dump_netcdf",
+    "dump_beads",
+    "dump_dipole",
+    "dump_polarizability",
+    "dump_cg",
+    "active"};
+  for (const char* periodic_output_keyword : periodic_output_keywords) {
+    if (keyword == periodic_output_keyword) {
+      return true;
+    }
   }
-  return result;
+  return false;
+}
+
+static void check_output_intervals(const std::vector<std::string>& tokens, const int num_steps_md)
+{
+  int interval = 0;
+  if (is_periodic_output_keyword(tokens[0])) {
+    if (
+      tokens.size() >= 2 && is_valid_int(tokens[1], &interval) && interval > 0 &&
+      num_steps_md % interval != 0 && interval % num_steps_md != 0) {
+      const std::string error =
+        tokens[0] + " interval should divide or be a multiple of N_md of mc gcmc.\n";
+      PRINT_INPUT_ERROR(error.c_str());
+    }
+    if (tokens[0] == "dump_xyz" && tokens.size() >= 3 && tokens[2].back() == '*') {
+      PRINT_INPUT_ERROR("dump_xyz with a filename ending in * cannot be used with mc gcmc.\n");
+    }
+  } else if (tokens[0] == "dump_observer") {
+    for (int i = 2; i <= 3 && i < (int)tokens.size(); ++i) {
+      if (is_valid_int(tokens[i], &interval) && interval > 0 && num_steps_md % interval != 0) {
+        PRINT_INPUT_ERROR("dump_observer intervals should divide N_md of mc gcmc.\n");
+      }
+    }
+  } else if (tokens[0] == "compute" && tokens.size() >= 4) {
+    int sample_interval = 0;
+    int output_interval = 0;
+    if (
+      is_valid_int(tokens[2], &sample_interval) && is_valid_int(tokens[3], &output_interval) &&
+      sample_interval > 0 && output_interval > 0 &&
+      num_steps_md % ((long long)sample_interval * output_interval) != 0) {
+      PRINT_INPUT_ERROR(
+        "compute sample_interval * output_interval should divide N_md of mc gcmc.\n");
+    }
+  }
+}
+
+static bool get_subrun_output_line(
+  const RunInputLine& line, const int num_steps_md, const int subrun, std::string& subrun_line)
+{
+  std::vector<std::string> tokens = line.tokens;
+  int interval = 0;
+  subrun_line = line.raw_line;
+  if (tokens.size() < 2 || !is_valid_int(tokens[1], &interval) || interval <= num_steps_md) {
+    return true;
+  }
+  if ((long long)(subrun + 1) * num_steps_md % interval != 0) {
+    return false;
+  }
+  tokens[1] = std::to_string(num_steps_md);
+  subrun_line = join_tokens(tokens);
+  return true;
 }
 
 static void write_model(
@@ -489,6 +564,11 @@ void GCMC_Driver::analyze_run(const RunInput& run_input)
     PRINT_INPUT_ERROR("number of steps in run should be a multiple of N_md of mc gcmc.\n");
   }
   num_subruns = num_steps_total / num_steps_md;
+  for (const auto& line : input_lines) {
+    if (!line.tokens.empty()) {
+      check_output_intervals(line.tokens, num_steps_md);
+    }
+  }
 
   std::string dump_line =
     "dump_xyz " + std::to_string(num_steps_md) + " " + SUBRUN_XYZ + " mass velocity";
@@ -512,6 +592,11 @@ void GCMC_Driver::analyze_run(const RunInput& run_input)
         lines.emplace_back(input_lines[n].raw_line);
       } else if (tokens[0] == "ensemble") {
         lines.emplace_back(get_subrun_ensemble_line(input_lines[n], k, num_subruns));
+      } else if (is_periodic_output_keyword(tokens[0])) {
+        std::string subrun_line;
+        if (get_subrun_output_line(input_lines[n], num_steps_md, k, subrun_line)) {
+          lines.emplace_back(subrun_line);
+        }
       } else if (k == 0 || !is_one_shot_keyword(tokens[0])) {
         lines.emplace_back(input_lines[n].raw_line);
       }

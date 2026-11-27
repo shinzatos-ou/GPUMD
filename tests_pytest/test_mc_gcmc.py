@@ -167,6 +167,34 @@ def _gcmc_run_in(mc_line, ensemble='nvt_lan 300 300 100'):
         (
             'potential nep_C.txt\n'
             'mc gcmc 10 300 300 1 0.5 1 1 C -7 12.011 auto\n'
+            'dump_thermo 15\n'
+            'run 10\n',
+            'dump_thermo interval should divide or be a multiple of N_md',
+        ),
+        (
+            'potential nep_C.txt\n'
+            'mc gcmc 10 300 300 1 0.5 1 1 C -7 12.011 auto\n'
+            'compute 0 5 4 temperature\n'
+            'run 10\n',
+            'compute sample_interval * output_interval should divide N_md',
+        ),
+        (
+            'potential nep_C.txt\n'
+            'mc gcmc 10 300 300 1 0.5 1 1 C -7 12.011 auto\n'
+            'dump_observer observe 15 15 0 0\n'
+            'run 10\n',
+            'dump_observer intervals should divide N_md',
+        ),
+        (
+            'potential nep_C.txt\n'
+            'mc gcmc 10 300 300 1 0.5 1 1 C -7 12.011 auto\n'
+            'dump_xyz 10 pos*\n'
+            'run 10\n',
+            'dump_xyz with a filename ending in * cannot be used',
+        ),
+        (
+            'potential nep_C.txt\n'
+            'mc gcmc 10 300 300 1 0.5 1 1 C -7 12.011 auto\n'
             'mc canonical 10 10 300 300\n'
             'run 10\n',
             'mc gcmc should be the only mc keyword',
@@ -194,6 +222,27 @@ def test_gcmc_splits_the_run_into_sub_runs(tmp_path, gpumd_command):
     assert not (tmp_path / 'run.in.original').exists()
     assert (tmp_path / 'model.xyz.original').exists()
     assert not (tmp_path / 'gcmc_subrun.xyz').exists()
+
+
+def test_gcmc_writes_outputs_at_the_steps_of_the_whole_run(tmp_path, gpumd_command):
+    run_in = (
+        'potential nep_C.txt\n'
+        'velocity 300 seed 11\n'
+        'time_step 1\n'
+        'ensemble nvt_lan 300 300 100\n'
+        'mc gcmc 10 300 300 1 0.5 1 1 C -100 12.011 auto seed 3\n'
+        'dump_thermo 5\n'
+        'dump_xyz 20 dump.xyz\n'
+        'run 60\n'
+    )
+    result = _run(tmp_path, gpumd_command, run_in)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    thermo = np.loadtxt(tmp_path / 'thermo.out', ndmin=2)
+    assert thermo.shape[0] == 12
+    counts = _read_mcmd(tmp_path / 'mcmd.out')[:, 3].astype(int).tolist()
+    frames = read(tmp_path / 'dump.xyz', index=':')
+    assert [len(frame) for frame in frames] == [counts[0], counts[2], counts[4]]
 
 
 def test_gcmc_keeps_an_existing_original_model(tmp_path, gpumd_command):
