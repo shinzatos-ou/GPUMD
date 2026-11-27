@@ -54,5 +54,7 @@ private:
   int num_steps_total = 0;
   double temperature_initial = 0.0;
   double temperature_final = 0.0;
-  bool has_group = false;
+  int num_grouping_methods = 0;
+  int grouping_method = -1;
+  int group_id = -1;
 };

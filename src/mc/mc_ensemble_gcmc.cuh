@@ -83,8 +83,10 @@ private:
   GPU_Vector<int> cl_cell_contents;
 
   double compute_isolated_atom_energy(int type);
-  void gcmc_phase(int md_step, double temperature, Atom& atom, Box& box);
-  void gcmc_phase_parallel(int md_step, double temperature, Atom& atom, Box& box);
+  void gcmc_phase(
+    int md_step, double temperature, Atom& atom, Box& box, const std::vector<char>& deletable);
+  void gcmc_phase_parallel(
+    int md_step, double temperature, Atom& atom, Box& box, const std::vector<char>& deletable);
   void write_statistics(
     int md_step,
     const std::vector<int>& htype,

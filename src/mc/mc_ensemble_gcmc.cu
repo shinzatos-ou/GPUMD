@@ -120,7 +120,14 @@ void MC_Ensemble_GCMC::compute(
     exit(1);
   }
 
-  gcmc_phase(md_step, temperature, atom, box);
+  std::vector<char> deletable(atom.number_of_atoms, 1);
+  if (grouping_method >= 0) {
+    const std::vector<int>& label = groups[grouping_method].cpu_label;
+    for (int n = 0; n < (int)label.size(); ++n) {
+      deletable[n] = (label[n] == group_id);
+    }
+  }
+  gcmc_phase(md_step, temperature, atom, box, deletable);
 }
 
 static __global__ void min_dist2_to_active(
@@ -429,7 +436,8 @@ void MC_Ensemble_GCMC::write_statistics(
   mc_output << std::endl;
 }
 
-void MC_Ensemble_GCMC::gcmc_phase(int md_step, double temperature, Atom& atom, Box& box)
+void MC_Ensemble_GCMC::gcmc_phase(
+  int md_step, double temperature, Atom& atom, Box& box, const std::vector<char>& deletable)
 {
   if (gcmc_species.empty() || num_gcmc_sweeps <= 0) {
     return;
@@ -441,7 +449,7 @@ void MC_Ensemble_GCMC::gcmc_phase(int md_step, double temperature, Atom& atom, B
     bool too_small_for_cell_list =
       box.get_num_bins(0.5 * nep_energy.paramb.rc_radial_max, num_bins_probe);
     if (!too_small_for_cell_list) {
-      gcmc_phase_parallel(md_step, temperature, atom, box);
+      gcmc_phase_parallel(md_step, temperature, atom, box, deletable);
       return;
     }
   }
@@ -658,7 +666,7 @@ void MC_Ensemble_GCMC::gcmc_phase(int md_step, double temperature, Atom& atom, B
             break;
           }
         }
-        if (is_impurity) {
+        if (is_impurity && deletable[n]) {
           cell_atoms[cell_of(hpos[n], hpos[cap + n], hpos[2 * cap + n])].push_back(n);
         }
       }
@@ -996,7 +1004,8 @@ static __global__ void gcmc_par_build_inputs(
   g_NN_angular[c] = nn_a;
 }
 
-void MC_Ensemble_GCMC::gcmc_phase_parallel(int md_step, double temperature, Atom& atom, Box& box)
+void MC_Ensemble_GCMC::gcmc_phase_parallel(
+  int md_step, double temperature, Atom& atom, Box& box, const std::vector<char>& deletable)
 {
   const int cap = atom.number_of_atoms;
   box.get_inverse();
@@ -1195,7 +1204,9 @@ void MC_Ensemble_GCMC::gcmc_phase_parallel(int md_step, double temperature, Atom
       } else {
         for (int s = 0; s < (int)gcmc_types.size(); ++s) {
           if (t == gcmc_types[s]) {
-            cell_atoms[cell_of(hpos[n], hpos[cap + n], hpos[2 * cap + n])].push_back(n);
+            if (deletable[n]) {
+              cell_atoms[cell_of(hpos[n], hpos[cap + n], hpos[2 * cap + n])].push_back(n);
+            }
             break;
           }
         }

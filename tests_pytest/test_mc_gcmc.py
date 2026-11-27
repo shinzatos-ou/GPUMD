@@ -20,15 +20,19 @@ NUM_SWEEPS = 20
 NUM_ACTIVE_CELLS = 1
 
 
-def _write_atoms(path, atoms):
+def _write_atoms(path, atoms, labels=None):
     cell = atoms.cell.array
     lattice = ' '.join(f'{x:.10f}' for x in cell.flatten())
+    properties = 'species:S:1:pos:R:3' if labels is None else 'species:S:1:pos:R:3:group:I:1'
     lines = [
         f'{len(atoms)}',
-        f'Lattice="{lattice}" pbc="T T T" Properties=species:S:1:pos:R:3',
+        f'Lattice="{lattice}" pbc="T T T" Properties={properties}',
     ]
-    for symbol, position in zip(atoms.get_chemical_symbols(), atoms.positions):
-        lines.append(f'{symbol} {position[0]:.10f} {position[1]:.10f} {position[2]:.10f}')
+    for n, (symbol, position) in enumerate(zip(atoms.get_chemical_symbols(), atoms.positions)):
+        line = f'{symbol} {position[0]:.10f} {position[1]:.10f} {position[2]:.10f}'
+        if labels is not None:
+            line += f' {labels[n]}'
+        lines.append(line)
     path.write_text('\n'.join(lines) + '\n')
 
 
@@ -36,6 +40,12 @@ def _write_model(path):
     atoms = make_bulk_C().repeat(4)
     assert len(atoms) == N_REAL
     _write_atoms(path, atoms)
+
+
+def _write_grouped_model(path):
+    atoms = make_bulk_C().repeat(4)
+    assert len(atoms) == N_REAL
+    _write_atoms(path, atoms, [n % 2 for n in range(len(atoms))])
 
 
 def _make_cubic_model():
@@ -191,6 +201,12 @@ def _gcmc_run_in(mc_line, ensemble='nvt_lan 300 300 100'):
             'dump_xyz 10 pos*\n'
             'run 10\n',
             'dump_xyz with a filename ending in * cannot be used',
+        ),
+        (
+            'potential nep_C.txt\n'
+            'mc gcmc 10 300 300 1 0.5 1 1 C -7 12.011 auto group 0 1\n'
+            'run 10\n',
+            'grouping method of mc gcmc should be less than the number of grouping methods',
         ),
         (
             'potential nep_C.txt\n'
@@ -356,6 +372,24 @@ def test_gcmc_overlap_cutoff_rejects_deletions(tmp_path, gpumd_command, mc_line)
     assert np.all(mcmd[:, 5] == 0.0)
     np.testing.assert_array_equal(mcmd[:, 6], mcmd[:, 2])
 
+
+@pytest.mark.parametrize('mu', [-100, 100])
+def test_gcmc_group_option_selects_the_exchanged_atoms(tmp_path, gpumd_command, mu):
+    result = _run(
+        tmp_path,
+        gpumd_command,
+        _gcmc_run_in(
+            f'mc gcmc 10 300 300 {NUM_SWEEPS} 0.5 1 1 C {mu} 12.011 auto seed 3 group 0 1'
+        ),
+        write_model=_write_grouped_model,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    counts = _read_mcmd(tmp_path / 'mcmd.out')[:, 3].astype(int).tolist()
+    assert counts[-1] != N_REAL
+    labels = read(tmp_path / 'model.xyz').arrays['group']
+    assert np.sum(labels == 0) == N_REAL // 2
+    assert np.sum(labels == 1) == N_REAL // 2 + counts[-1] - N_REAL
 
 def test_gcmc_works_with_other_thermostats(tmp_path, gpumd_command):
     result = _run(

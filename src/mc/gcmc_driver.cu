@@ -56,7 +56,7 @@ static void copy_file(const std::string& in_file, const std::string& out_file)
   output << input.rdbuf();
 }
 
-static bool model_has_group(const std::string& filename)
+static int get_number_of_grouping_methods(const std::string& filename)
 {
   std::ifstream input(filename);
   if (!input.is_open()) {
@@ -71,7 +71,7 @@ static bool model_has_group(const std::string& filename)
   const std::string marker = "properties=";
   const size_t start = lower.find(marker);
   if (start == std::string::npos) {
-    return false;
+    return 0;
   }
   size_t end = start + marker.size();
   while (end < lower.size() && !std::isspace(static_cast<unsigned char>(lower[end]))) {
@@ -89,11 +89,12 @@ static bool model_has_group(const std::string& filename)
     pos = colon + 1;
   }
   for (size_t n = 0; n + 2 < fields.size(); n += 3) {
-    if (fields[n] == "group") {
-      return true;
+    int number = 0;
+    if (fields[n] == "group" && is_valid_int(fields[n + 2], &number)) {
+      return number;
     }
   }
-  return false;
+  return 0;
 }
 
 static int find_nep_type(const std::vector<std::string>& atom_symbols, const std::string& symbol)
@@ -281,7 +282,9 @@ static void write_model(
   const int num_original_atoms,
   Atom& atom,
   const Box& box,
-  const std::vector<Group>& groups)
+  const std::vector<Group>& groups,
+  const int grouping_method,
+  const int group_id)
 {
   const int cap = atom.number_of_atoms;
   atom.position_per_atom.copy_to_host(atom.cpu_position_per_atom.data());
@@ -337,8 +340,12 @@ static void write_model(
       atom.cpu_velocity_per_atom[n] * natural_to_A_per_fs,
       atom.cpu_velocity_per_atom[n + cap] * natural_to_A_per_fs,
       atom.cpu_velocity_per_atom[n + 2 * cap] * natural_to_A_per_fs);
-    for (const auto& group : groups) {
-      fprintf(fid, " %d", n < num_original_atoms ? group.cpu_label[n] : 0);
+    for (int m = 0; m < (int)groups.size(); ++m) {
+      if (n < num_original_atoms) {
+        fprintf(fid, " %d", groups[m].cpu_label[n]);
+      } else {
+        fprintf(fid, " %d", m == grouping_method ? group_id : 0);
+      }
     }
     fprintf(fid, "\n");
   }
@@ -488,9 +495,28 @@ void GCMC_Driver::parse_gcmc(const std::vector<std::string>& tokens)
         overlap_cutoff2_by_type[t] = (float)(d * d);
         printf("    overlap_cutoff: species %s -> %g A.\n", symbol.c_str(), d);
       }
+    } else if (tokens[idx] == "group") {
+      ++idx;
+      if (
+        idx + 1 >= num_param || !is_valid_int(tokens[idx++], &grouping_method) ||
+        grouping_method < 0) {
+        PRINT_INPUT_ERROR("grouping method of mc gcmc should be a non-negative integer.\n");
+      }
+      if (!is_valid_int(tokens[idx++], &group_id) || group_id < 0) {
+        PRINT_INPUT_ERROR("group ID of mc gcmc should be a non-negative integer.\n");
+      }
+      if (grouping_method >= num_grouping_methods) {
+        PRINT_INPUT_ERROR("grouping method of mc gcmc should be less than the number of grouping "
+                          "methods in model.xyz.\n");
+      }
+      printf(
+        "    inserted atoms join group %d of grouping method %d, and only this group is deleted "
+        "from.\n",
+        group_id,
+        grouping_method);
     } else {
       PRINT_INPUT_ERROR(
-        "unknown option for mc gcmc (expected parallel, seed or overlap_cutoff).\n");
+        "unknown option for mc gcmc (expected parallel, seed, overlap_cutoff or group).\n");
     }
   }
   if (gcmc_parallel && n_sep < 2) {
@@ -572,7 +598,7 @@ void GCMC_Driver::analyze_run(const RunInput& run_input)
 
   std::string dump_line =
     "dump_xyz " + std::to_string(num_steps_md) + " " + SUBRUN_XYZ + " mass velocity";
-  if (has_group) {
+  if (num_grouping_methods > 0) {
     dump_line += " group_labels";
   }
   dump_line += " precision double";
@@ -616,7 +642,7 @@ void GCMC_Driver::initialize(const RunInput& run_input)
   }
   potential_file_name = get_first_potential_file(run_input);
   atom_symbols_in_nep = get_atom_symbols(potential_file_name);
-  has_group = model_has_group("model.xyz");
+  num_grouping_methods = get_number_of_grouping_methods("model.xyz");
   std::remove(SUBRUN_XYZ);
 
   analyze_run(run_input);
@@ -657,7 +683,7 @@ void GCMC_Driver::mc_step(int run_idx)
   const double temperature = temperature_initial + (md_step - 1) *
                                                      (temperature_final - temperature_initial) /
                                                      num_steps_total;
-  gcmc->compute(md_step, temperature, atom, box, groups, -1, -1);
+  gcmc->compute(md_step, temperature, atom, box, groups, grouping_method, group_id);
 
-  write_model("model.xyz", num_original_atoms, atom, box, groups);
+  write_model("model.xyz", num_original_atoms, atom, box, groups, grouping_method, group_id);
 }

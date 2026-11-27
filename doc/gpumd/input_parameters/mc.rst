@@ -19,7 +19,7 @@ Syntax
     mc canonical <md_steps> <mc_trials> <T_i> <T_f> [group <grouping_method> <group_id>]
     mc sgc <md_steps> <mc_trials> <T_i> <T_f> <num_species> {<species_0> <mu_0> <species_1> <mu_1> ...} [group <grouping_method>  <group_id>]
     mc vcsgc <md_steps> <mc_trials> <T_i> <T_f> <num_species> {<species_0> <phi_0> <species_1> <phi_1> ...} <kappa> [group <grouping_method>  <group_id>]
-    mc gcmc <md_steps> <T_i> <T_f> <num_sweeps> <a_plus> <n_sep> <num_species> {<species_0> <mu_0> <mass_0> <e0_0> ...} [parallel] [seed <seed>] [overlap_cutoff <num> {<species> <d>} ...]
+    mc gcmc <md_steps> <T_i> <T_f> <num_sweeps> <a_plus> <n_sep> <num_species> {<species_0> <mu_0> <mass_0> <e0_0> ...} [parallel] [seed <seed>] [overlap_cutoff <num> {<species> <d>} ...] [group <grouping_method> <group_id>]
 
 Parameters
 ----------
@@ -93,6 +93,7 @@ The energy change is calculated with the :term:`NEP` model only.
 * :attr:`parallel`: evaluate the trials of a sweep in parallel on the GPU.
   :attr:`n_sep` must then be at least 2, because the energy change of a trial depends on the atoms within two cutoffs of it.
 * :attr:`seed`: seed of the random numbers.
+* :attr:`group`: inserted atoms join group :attr:`group_id` of grouping method :attr:`grouping_method` and group 0 of the other grouping methods, and only the atoms of this group are deleted, which keeps the insertions and deletions reversible. Without this option, any atom of a listed species can be deleted.
 * :attr:`overlap_cutoff`: an insertion of species :attr:`species` closer than :attr:`d` (in Å) to another atom is rejected before the energy is calculated, and so is the deletion of an atom of that species that has another atom closer than :attr:`d`, which keeps the insertions and deletions reversible. :attr:`d` must not exceed the radial cutoff of the :term:`NEP` model.
 
 When :attr:`mc gcmc` is used, the :ref:`run <kw_run>` is split into sub-runs of :attr:`md_steps` steps, similar to the :ref:`deposit keyword <kw_deposit>`.
@@ -108,7 +109,7 @@ The run stops with an error if ``model.xyz.original`` already exists, so that a 
 * If the target temperature or pressure of the :ref:`standard <kw_ensemble_standard>`, :ref:`QTB <kw_ensemble_qtb>`, :ref:`MTTK <kw_ensemble_mttk>`, or :ref:`PIMD <kw_ensemble_pimd>` ensemble changes during the run (:attr:`T_1` to :attr:`T_2`, or :attr:`p_1` to :attr:`p_2`), the targets of each sub-run are set so that they change linearly over the whole run.
 * :attr:`mc gcmc` cannot be combined with other :attr:`mc` lines, with :ref:`deposit <kw_deposit>`, with the ``average`` mode of :ref:`dump_observer <kw_dump_observer>`, or with spin models.
 * The trials use the first :ref:`potential <kw_potential>` in :ref:`run.in <run_in>`, which is also the potential that propagates the :term:`MD`.
-* Inserted atoms belong to group 0 of every grouping method.
+* Without :attr:`group`, inserted atoms belong to group 0 of every grouping method, so keywords that act on group 0, such as :ref:`fix <kw_fix>` and :ref:`move <kw_move>`, also act on them.
 * The run stops with an error if the trials leave fewer than two atoms.
 * Each sub-run starts from step 0 and appends to the output files. The state of the thermostat and barostat and the averaging windows of the outputs restart in every sub-run.
 * The interval of :ref:`dump_thermo <kw_dump_thermo>`, :ref:`dump_xyz <kw_dump_xyz>`, :ref:`dump_restart <kw_dump_restart>`, :ref:`dump_netcdf <kw_dump_netcdf>`, :ref:`dump_beads <kw_dump_beads>`, :ref:`dump_dipole <kw_dump_dipole>`, :ref:`dump_polarizability <kw_dump_polarizability>`, ``dump_cg``, and :ref:`active <kw_active>` must divide :attr:`md_steps` or be a multiple of it, and the outputs are then written at the same steps as in a run without :attr:`mc gcmc`.
